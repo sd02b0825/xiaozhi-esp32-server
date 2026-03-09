@@ -105,6 +105,8 @@ class MemoryProvider(MemoryProviderBase):
                     embedder_config["api_key"] = config["embedding_api_key"]
                 if "embedding_model" in config:
                     embedder_config["model"] = config["embedding_model"]
+                if "embedding_dims" in config:
+                    embedder_config["embedding_dims"] = config["embedding_dims"]
                 # Handle base_url based on provider type
                 # - qwen provider uses dashscope_base_url
                 # - openai provider uses openai_base_url
@@ -123,7 +125,8 @@ class MemoryProvider(MemoryProviderBase):
                     "provider": embedding_provider,
                     "config": embedder_config
                 }
-
+            # 打印powermem配置
+            # logger.bind(tag=TAG).info(f"PowerMem config: {powermem_config}")
             # Initialize memory client based on mode
             if self.enable_user_profile:
                 from powermem import UserMemory
