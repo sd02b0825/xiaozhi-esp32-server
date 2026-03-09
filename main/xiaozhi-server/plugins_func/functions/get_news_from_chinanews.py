@@ -13,22 +13,25 @@ if TYPE_CHECKING:
 TAG = __name__
 logger = setup_logging()
 
+NEWS_TYPE="社会、国际、财经、即时、健康生活"
+
 GET_NEWS_FROM_CHINANEWS_FUNCTION_DESC = {
     "type": "function",
     "function": {
         "name": "get_news_from_chinanews",
         "description": (
-            "获取最新新闻，随机选择一条新闻进行播报。"
-            "用户可以指定新闻类型，如社会新闻、科技新闻、国际新闻等。"
+            "获取最新新闻，选择指定下标的新闻进行播报。"
+            "用户可以指定新闻类型，如"+NEWS_TYPE+"等。"
             "如果没有指定，默认播报社会新闻。"
-            "用户可以要求获取详细内容，此时会获取新闻的详细内容。"
+            "用户可以要求获取详细内容，此时会获取上一条新闻的详细内容。"
+            "用户可以通过index参数指定播报第几条新闻，范围1-3。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
-                    "description": "新闻类别，例如社会、科技、国际。可选参数，如果不提供则使用默认类别",
+                    "description": "新闻类别，例如"+NEWS_TYPE+"。可选参数，如果不提供则使用默认类别",
                 },
                 "detail": {
                     "type": "boolean",
@@ -37,6 +40,10 @@ GET_NEWS_FROM_CHINANEWS_FUNCTION_DESC = {
                 "lang": {
                     "type": "string",
                     "description": "返回用户使用的语言code，例如zh_CN/zh_HK/en_US/ja_JP等，默认zh_CN",
+                },
+                "index": {
+                    "type": "integer",
+                    "description": "新闻下标，默认为1。表示播报第几条新闻。",
                 },
             },
             "required": ["lang"],
@@ -134,7 +141,17 @@ def map_category(category_text):
         "财经": "finance_rss_url",
         "财经新闻": "finance_rss_url",
         "金融": "finance_rss_url",
+        "金融新闻": "finance_rss_url",
         "经济": "finance_rss_url",
+        "经济新闻": "finance_rss_url",
+        "即时": "news_rss_url",
+        "即时新闻": "news_rss_url",
+        "健康生活": "life_rss_url",
+        "健康生活新闻": "life_rss_url",
+        "健康": "life_rss_url",
+        "健康新闻": "life_rss_url",
+        "生活": "life_rss_url",
+        "生活新闻": "life_rss_url"
     }
 
     # 转换为小写并去除空格
@@ -154,8 +171,9 @@ def get_news_from_chinanews(
     category: str = None,
     detail: bool = False,
     lang: str = "zh_CN",
+    index: int = 1,
 ):
-    """获取新闻并随机选择一条进行播报，或获取上一条新闻的详细内容"""
+    """获取新闻并选择指定下标的新闻进行播报，或获取上一条新闻的详细内容"""
     try:
         # 如果detail为True，获取上一条新闻的详细内容
         if detail:
@@ -228,8 +246,11 @@ def get_news_from_chinanews(
                 Action.REQLLM, "抱歉，未能获取到新闻信息，请稍后再试。", None
             )
 
-        # 随机选择一条新闻
-        selected_news = random.choice(news_items)
+        # 限制index范围在1-3之间，默认为1
+        index = max(1, min(3, index))
+
+        # 选择指定下标的新闻（转换为0-based索引）
+        selected_news = news_items[index - 1] if index <= len(news_items) else news_items[0]
 
         # 保存当前新闻链接到连接对象，以便后续查询详情
         if not hasattr(conn, "last_news_link"):
