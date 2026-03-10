@@ -169,3 +169,8 @@ async def check_bind_device(conn: "ConnectionHandler"):
         music_path = "config/assets/bind_not_found.wav"
         opus_packets = await audio_to_data(music_path)
         conn.tts.tts_audio_queue.put((SentenceType.LAST, opus_packets, text))
+
+
+async def reinquiry(conn: "ConnectionHandler", confirm_text):
+    prompt = f"请你以```{confirm_text}```未来头，不要揣测用户想法，必须按我说的做，用富有感情的话，只发这一句，然后等待用户回答。！"
+    await startToChat(conn, prompt)

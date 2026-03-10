@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from config.logger import setup_logging
 from core.providers.asr.dto.dto import InterfaceType
 from core.handle.receiveAudioHandle import startToChat
+from core.handle.receiveAudioHandle import reinquiry
 from core.handle.reportHandle import enqueue_asr_report
 from core.utils.util import remove_punctuation_and_length
 from core.handle.receiveAudioHandle import handleAudioMessage
@@ -85,7 +86,7 @@ class ASRProviderBase(ABC):
         """并行处理ASR和声纹识别"""
         try:
             total_start_time = time.monotonic()
-
+            
             # 准备音频数据
             if conn.audio_format == "pcm":
                 pcm_data = asr_audio_task
@@ -128,7 +129,7 @@ class ASRProviderBase(ABC):
                 speaker_name = ""
             else:
                 speaker_name = voiceprint_result
-
+                
             # 判断 ASR 结果类型
             if isinstance(raw_text, dict):
                 # FunASR 返回的 dict 格式
@@ -158,7 +159,76 @@ class ASRProviderBase(ABC):
                 # 构建包含说话人信息的JSON字符串
                 enhanced_text = self._build_enhanced_text(raw_text, speaker_name)
                 content_for_length_check = raw_text
+            # ============ 【新增】处理用户对声纹确认的回答 ============
+            if getattr(conn, 'waiting_voiceprint_confirm', False):
+                logger.bind(tag=TAG).debug(f"进入询问用户后方法")
+                # 用户正在确认流程中，先处理回答
+                user_text =enhanced_text
+                
+                confirm_speaker = getattr(conn, 'confirm_speaker', None)
+                pending_content = getattr(conn, 'pending_voiceprint_content', None)  # 保存的原始内容
+                conn.waiting_voiceprint_confirm = False  # 重置标记
+                conn.pending_voiceprint_content = None  # 清理保存的内容
+                logger.bind(tag=TAG).info(f"用户输入内容: {user_text}，confirm_speaker：{confirm_speaker},pending_content:{pending_content}")
+                from core.handle.sendAudioHandle import send_stt_message
+                
+                # 简单关键词匹配
+                if any(kw in user_text for kw in ["不", "不是", "no", "否", "换人"]):
+                    logger.bind(tag=TAG).info(f"用户否认说话人：{confirm_speaker}，清理缓存")
+                    # 清理当前说话人
+                    conn.current_speaker = None
+                    # 如果 voiceprint_provider 支持清理缓存，可调用
+                    if hasattr(conn.voiceprint_provider, 'clear_session_cache'):
+                        await conn.voiceprint_provider.clear_session_cache(conn.session_id)
+                    confirm_text =f"好的，那请问您是谁呢？"
+                    await reinquiry(conn, confirm_text)
+                    return    
+                elif any(kw in user_text for kw in ["是", "对的", "没错", "yes", "对", "继续", "是我"]):
+                    logger.bind(tag=TAG).info(f"用户确认说话人：{confirm_speaker}")
+                    await send_stt_message(conn, f"好的，继续和{confirm_speaker}聊天~")
+                    
+                    # 🎯 关键：恢复处理之前保存的用户问题
+                    if pending_content:
+                        logger.bind(tag=TAG).info(f"恢复处理用户问题：{pending_content}")
+                        await startToChat(conn, pending_content)
+                    return
+                else:
+                    # 用户回答不明确，再次询问
+                    confirm_text =f"我没听清，您是{confirm_speaker}吗？请回答是或不是~"
+                    await reinquiry(conn, confirm_text)
+                    # 重新设置等待确认标记
+                    conn.waiting_voiceprint_confirm = True
+                    conn.confirm_speaker = confirm_speaker
+                    conn.pending_voiceprint_content = pending_content  # 保留待处理内容
+                    return
+            # ============ 确认处理结束 ============
+            # ============ 【新增】声纹确认询问处理 ============
+            need_confirm = False
+            confirm_speaker_name = None
 
+            if speaker_name and speaker_name.startswith("__CONFIRM__:"):
+                # 🎯 检测到确认标记，提取真实说话人名称
+                confirm_speaker_name = speaker_name.replace("__CONFIRM__:", "")
+                need_confirm = True
+                logger.bind(tag=TAG).warning(f"触发声纹确认询问：{confirm_speaker_name}")
+                
+                # 直接发送确认询问，不调用 startToChat
+                # from core.handle.sendAudioHandle import send_stt_message
+                confirm_text = f"请问当前还是{confirm_speaker_name}在跟我聊天吗？"
+                # await send_stt_message(conn, confirm_text)
+                # conn.logger.bind(tag=TAG).info(f"已发送确认询问：{confirm_text}")
+                
+                # 设置等待确认标记（可选：用于后续处理用户回答）
+                conn.waiting_voiceprint_confirm = True
+                conn.confirm_speaker = confirm_speaker_name
+                # 使用自定义模块进行上报
+                await reinquiry(conn, confirm_text)
+                # 记录日志后直接返回，不继续聊天流程
+                total_time = time.monotonic() - total_start_time
+                logger.bind(tag=TAG).debug(f"声纹确认询问处理完成，总耗时：{total_time:.3f}s")
+                conn.pending_voiceprint_content = enhanced_text  # 保留待处理内容
+                return  # 🎯 关键：直接返回，不调用 startToChat
+            # ============ 确认逻辑结束 ============
             # 性能监控
             total_time = time.monotonic() - total_start_time
             logger.bind(tag=TAG).debug(f"总处理耗时: {total_time:.3f}s")
