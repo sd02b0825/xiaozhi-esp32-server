@@ -78,4 +78,10 @@ public class AgentChatHistoryEntity {
      */
     @TableField(value = "updated_at")
     private Date updatedAt;
+
+    /**
+     * 发言人
+     */
+    @TableField(value = "speaker")
+    private String speaker;
 }

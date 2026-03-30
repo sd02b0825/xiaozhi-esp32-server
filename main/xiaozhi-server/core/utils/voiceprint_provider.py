@@ -178,7 +178,7 @@ class VoiceprintProvider:
                                 # 🎯 服务端标记需要确认，返回特殊格式字符串
                                 logger.bind(tag=TAG).warning(f"触发声纹确认询问：{speaker_id}")
                                 return f"__CONFIRM__:{result_name}"                                 
-                        # ============ 确认逻辑结束 ============
+                        # ============ 确认逻辑结束 ============    
                         
                         # 相似度阈值检查
                         if score < self.similarity_threshold:

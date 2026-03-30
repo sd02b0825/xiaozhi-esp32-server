@@ -1,5 +1,6 @@
 package xiaozhi.modules.agent.dto;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -30,4 +31,6 @@ public class AgentChatHistoryReportDTO {
     private String audioBase64;
     @Schema(description = "上报时间，十位时间戳，空时默认使用当前时间", example = "1745657732")
     private Long reportTime;
+    @Schema(description = "发言人", example = "张三")
+    private String speaker;
 }
