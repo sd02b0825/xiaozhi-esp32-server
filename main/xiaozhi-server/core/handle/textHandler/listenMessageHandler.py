@@ -59,7 +59,7 @@ class ListenTextMessageHandler(TextMessageHandler):
                 # 是否开启唤醒词回复
                 enable_greeting = conn.config.get("enable_greeting", True)
 
-                if is_wakeup_words and not enable_greeting:
+                if original_text == "" or (is_wakeup_words and not enable_greeting):
                     # 如果是唤醒词，且关闭了唤醒词回复，就不用回答
                     await send_stt_message(conn, original_text)
                     await send_tts_message(conn, "stop", None)

@@ -178,6 +178,13 @@ class ConnectionHandler:
             real_ip = self.headers.get("x-real-ip") or self.headers.get(
                 "x-forwarded-for"
             )
+            if(self.headers.get("device-ip")):
+                real_ip = self.headers.get("device-ip")
+                
+            # 如果real_ip包含::ffff:，要去掉::ffff:
+            if real_ip and real_ip.startswith("::ffff:"):
+                real_ip = real_ip.replace("::ffff:", "", 1)    
+
             if real_ip:
                 self.client_ip = real_ip.split(",")[0].strip()
             else:
