@@ -15,11 +15,12 @@
     <result column="audio_url" jdbcType="VARCHAR" property="audioUrl" />
     <result column="created_at" jdbcType="TIMESTAMP" property="createdAt" />
     <result column="updated_at" jdbcType="TIMESTAMP" property="updatedAt" />
+    <result column="speaker" jdbcType="VARCHAR" property="speaker" />
   </resultMap>
   <sql id="Base_Column_List">
     <!--@mbg.generated-->
     id, mac_address, agent_id, session_id, sort, chat_type, content, audio, audio_url, 
-    created_at, updated_at
+    created_at, updated_at,speaker
   </sql>
 
   <select id="getAudioIdsByAgentId" resultType="java.lang.String">

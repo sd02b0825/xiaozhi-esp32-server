@@ -170,6 +170,15 @@ class VoiceprintProvider:
                         total_elapsed_time = time.monotonic() - api_start_time
                         
                         logger.bind(tag=TAG).info(f"声纹识别耗时: {total_elapsed_time:.3f}s")
+
+                        # ============ 【新增】处理连续失败确认标记 ============
+                        if score == -2.0 and speaker_id:
+                             if speaker_id and speaker_id in self.speaker_map:
+                                result_name = self.speaker_map[speaker_id]["name"]
+                                # 🎯 服务端标记需要确认，返回特殊格式字符串
+                                logger.bind(tag=TAG).warning(f"触发声纹确认询问：{speaker_id}")
+                                return f"__CONFIRM__:{result_name}"                                 
+                        # ============ 确认逻辑结束 ============    
                         
                         # 相似度阈值检查
                         if score < self.similarity_threshold:

@@ -2,6 +2,7 @@ package xiaozhi.modules.agent.dto;
 
 import java.util.Date;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -25,4 +26,7 @@ public class AgentChatHistoryDTO {
 
     @Schema(description = "MAC地址")
     private String macAddress;
+
+    @Schema(description = "发言人")
+    private String speaker;
 }
