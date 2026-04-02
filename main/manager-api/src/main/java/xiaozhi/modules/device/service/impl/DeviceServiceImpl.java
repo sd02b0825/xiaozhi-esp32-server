@@ -286,6 +286,13 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             DeviceReportRespDTO.Activation code = buildActivation(macAddress, deviceReport);
             response.setActivation(code);
         }
+        DeviceReportRespDTO.AudioMonitor audioMonitor = new DeviceReportRespDTO.AudioMonitor();
+        String url=sysParamsService.getValue(Constant.AUDIO_MONITOR_URL, true);
+        if (StringUtils.isBlank(url) || url.equals("null")) {
+            url = "";
+        }
+        audioMonitor.setUrl(url);
+        response.setAudioMonitor(audioMonitor);
 
         return response;
     }

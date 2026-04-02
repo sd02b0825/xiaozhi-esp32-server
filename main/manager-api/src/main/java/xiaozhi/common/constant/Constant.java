@@ -335,4 +335,6 @@ public interface Constant {
             return value;
         }
     }
+    /*环境声音检测地址 */
+    String AUDIO_MONITOR_URL="audio_monitor_url";
 }

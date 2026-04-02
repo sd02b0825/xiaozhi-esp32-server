@@ -160,7 +160,8 @@ class ASRProviderBase(ABC):
                 content_for_length_check = raw_text
            
             # 处理用户对声纹确认的回答
-            await self._handle_voiceprint_confirm(conn, speaker_name, enhanced_text)
+            if not await self._handle_voiceprint_confirm(conn, speaker_name, enhanced_text):
+                return
 
             # 性能监控
             total_time = time.monotonic() - total_start_time
@@ -181,7 +182,7 @@ class ASRProviderBase(ABC):
 
             logger.bind(tag=TAG).debug(f"异常详情: {traceback.format_exc()}")
     
-    async def _handle_voiceprint_confirm(self, conn: "ConnectionHandler", speaker_name: str, enhanced_text: str):
+    async def _handle_voiceprint_confirm(self, conn: "ConnectionHandler", speaker_name: str, enhanced_text: str) -> bool:
         """处理用户对声纹确认的回答"""
         try:
             # ============ 【新增】处理用户对声纹确认的回答 ============
@@ -222,7 +223,7 @@ class ASRProviderBase(ABC):
                     await self.reinquiry(conn, confirm_text)
                     total_time = time.monotonic() - total_start_time
                     logger.bind(tag=TAG).debug(f"声纹确认回答处理完成（否认），总耗时: {total_time:.3f}s")
-                    return
+                    return False
                 elif any(kw in user_text for kw in ["是", "对的", "没错", "yes", "对", "继续", "是我"]):
                     logger.bind(tag=TAG).info(f"用户确认说话人: {confirm_speaker}")
                     await send_stt_message(conn, f"好的，继续和{confirm_speaker}聊天~")
@@ -233,7 +234,7 @@ class ASRProviderBase(ABC):
                         await startToChat(conn, pending_content)
                     total_time = time.monotonic() - total_start_time
                     logger.bind(tag=TAG).debug(f"声纹确认回答处理完成（确认），总耗时: {total_time:.3f}s")
-                    return
+                    return False
                 else:
                     # 用户回答不明确，再次询问
                     confirm_text = f"我没听清，您是{confirm_speaker}吗？请回答是或不是~"
@@ -244,7 +245,7 @@ class ASRProviderBase(ABC):
                     conn.pending_voiceprint_content = pending_content  # 保留待处理内容
                     total_time = time.monotonic() - total_start_time
                     logger.bind(tag=TAG).debug(f"声纹确认回答处理完成（不明确），总耗时: {total_time:.3f}s")
-                    return
+                    return False
 
             # ============ 确认处理结束 ============
             # ============ 【新增】声纹确认询问处理 ============
@@ -270,11 +271,13 @@ class ASRProviderBase(ABC):
                 total_time = time.monotonic() - total_start_time
                 logger.bind(tag=TAG).debug(f"声纹确认询问处理完成，总耗时: {total_time:.3f}s")
                 conn.pending_voiceprint_content = enhanced_text  # 保留待处理内容
-                return  # 🎯 关键：直接返回，不调用 startToChat
+                return False # 🎯 关键：直接返回，不调用 startToChat
 
+            return True
         except Exception as e:
             logger.bind(tag=TAG).error(f"处理声纹确认失败: {e}")
             logger.bind(tag=TAG).debug(f"异常堆栈: {traceback.format_exc()}")
+            return True
 
     async def reinquiry(self, conn: "ConnectionHandler", confirm_text):
         prompt = f"请你以```{confirm_text}```为开头，不要揣测用户想法，必须按我说的做，用富有感情的话，只发这一句，然后等待用户回答。！"

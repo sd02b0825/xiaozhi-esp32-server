@@ -23,8 +23,11 @@ public class DeviceReportRespDTO {
     @Schema(description = "WebSocket配置")
     private Websocket websocket;
 
-    @Schema(description = "MQTT Gateway配置")
+    @Schema(description = "MQTT Gateway 配置")
     private MQTT mqtt;
+    
+    @Schema(description = "环境声音检测配置")
+    private AudioMonitor audioMonitor;
 
     @Getter
     @Setter
@@ -91,5 +94,13 @@ public class DeviceReportRespDTO {
         private String publish_topic;
         @Schema(description = "ESP32 订阅的主题")
         private String subscribe_topic;
+    }
+
+    @Getter
+    @Setter
+    public static class AudioMonitor {
+        @Schema(description = "环境声音检测地址")
+        private String url;
+
     }
 }

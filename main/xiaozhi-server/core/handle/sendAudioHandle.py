@@ -281,7 +281,8 @@ async def send_tts_message(conn: "ConnectionHandler", state, text=None):
         # 等待所有音频包发送完成
         await _wait_for_audio_completion(conn)
         # 停止音频发送循环
-        conn.audio_rate_controller.stop_sending()
+        if hasattr(conn, "audio_rate_controller") and conn.audio_rate_controller:
+            conn.audio_rate_controller.stop_sending()
         # 清除服务端讲话状态
         conn.clearSpeakStatus()
 
