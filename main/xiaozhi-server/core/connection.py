@@ -1080,10 +1080,12 @@ class ConnectionHandler:
                     )
 
                 # 如需要大模型先处理一轮，添加相关处理后的日志情况
+                # LLM 流式阶段已播报过的文本
+                streamed_text = ""
                 if len(response_message) > 0:
-                    text_buff = "".join(response_message)
-                    self.tts_MessageText = text_buff
-                    self.dialogue.put(Message(role="assistant", content=text_buff))
+                    streamed_text = "".join(response_message)
+                    self.tts_MessageText = streamed_text
+                    self.dialogue.put(Message(role="assistant", content=streamed_text))
                 response_message.clear()
 
                 self.logger.bind(tag=TAG).debug(
@@ -1113,7 +1115,7 @@ class ConnectionHandler:
 
                 # 统一处理所有工具调用结果
                 if tool_results:
-                    self._handle_function_result(tool_results, depth=depth)
+                    self._handle_function_result(tool_results, depth=depth,streamed_text=streamed_text)
 
         # 存储对话内容
         if len(response_message) > 0:
@@ -1173,7 +1175,7 @@ class ConnectionHandler:
         result = "、".join(datas)
         return result
 
-    def _handle_function_result(self, tool_results, depth):
+    def _handle_function_result(self, tool_results, depth,streamed_text):
         need_llm_tools = []
 
         for result, tool_call_data in tool_results:
@@ -1183,7 +1185,12 @@ class ConnectionHandler:
                 Action.ERROR,
             ]:  # 直接回复前端
                 text = result.response if result.response else result.result
-                self.tts.tts_one_sentence(self, ContentType.TEXT, content_detail=text)
+                if streamed_text:
+                    self.logger.bind(tag=TAG).debug(
+                        f"文本已播报，跳过工具调用 {tool_call_data['name']}"
+                    )
+                else:
+                    self.tts.tts_one_sentence(self, ContentType.TEXT, content_detail=text)
                 self.dialogue.put(Message(role="assistant", content=text))
             elif result.action == Action.REQLLM:
                 # 收集需要 LLM 处理的工具

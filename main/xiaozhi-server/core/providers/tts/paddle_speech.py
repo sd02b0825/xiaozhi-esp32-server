@@ -4,6 +4,7 @@ import json
 import base64
 import asyncio
 import websockets
+import httpx
 import numpy as np
 from datetime import datetime
 from config.logger import setup_logging
@@ -79,8 +80,13 @@ class TTSProvider(TTSProviderBase):
         return wav_io.getvalue()
 
     async def text_to_speak(self, text, output_file):
+        text=text.replace("~","，");
+        text=text.replace("～","，");
+        text+="。";
         if self.protocol == "websocket":
             return await self.text_streaming(text, output_file)
+        elif self.protocol == "http":
+            return await self.text_http(text, output_file)
         else:
             raise ValueError("Unsupported protocol. Please use 'websocket' or 'http'.")
 
@@ -155,3 +161,40 @@ class TTSProvider(TTSProviderBase):
 
         except Exception as e:
             raise Exception(f"Error during TTS WebSocket request: {e} while processing text: {text}")
+
+
+    async def text_http(self, text, output_file):
+        try:
+            # 将 ws:// 替换为 http://，构造 HTTP 请求 URL
+            http_url = self.url.replace("ws://", "http://").replace("wss://", "https://")
+            payload = {
+                "text": text,
+                "spk_id": self.spk_id,
+            }
+
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(http_url, json=payload)
+                response.raise_for_status()
+
+                # 返回为 base64 编码的 PCM 音频数据
+                audio_base64 = response.text
+                pcm_data = base64.b64decode(audio_base64)
+
+            # 将 PCM 数据转换为 WAV 格式
+            wav_data = await self.pcm_to_wav(pcm_data)
+
+            # 根据配置决定是否保存文件
+            if not self.delete_audio_file and self.save_path:
+                with open(self.save_path, "wb") as f:
+                    f.write(wav_data)
+                logger.bind(tag=TAG).info(f"音频文件已保存到: {self.save_path}")
+
+            # 返回或保存音频数据
+            if output_file:
+                with open(output_file, "wb") as file_to_save:
+                    file_to_save.write(wav_data)
+            else:
+                return wav_data
+
+        except Exception as e:
+            raise Exception(f"Error during TTS HTTP request: {e} while processing text: {text}")
