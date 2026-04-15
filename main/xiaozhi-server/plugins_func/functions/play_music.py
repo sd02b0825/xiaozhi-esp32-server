@@ -28,7 +28,7 @@ play_music_function_desc = {
             "properties": {
                 "song_name": {
                     "type": "string",
-                    "description": "歌曲名称，如果用户没有指定具体歌名则为'random', 明确指定的时返回音乐的名字 示例: ```用户:播放两只老虎\n参数：两只老虎``` ```用户:播放音乐 \n参数：random ```",
+                    "description": "歌曲名称，如果用户没有指定具体歌名则为'none', 明确指定的时返回音乐的名字 示例: ```用户:播放两只老虎\n参数：两只老虎``` ```用户:播放音乐 \n参数：none ```",
                 }
             },
             "required": ["song_name"],
@@ -40,9 +40,11 @@ play_music_function_desc = {
 @register_function("play_music", play_music_function_desc, ToolType.SYSTEM_CTL)
 def play_music(conn: "ConnectionHandler", song_name: str):
     try:
-        music_intent = (
-            f"播放音乐 {song_name}" if song_name != "random" else "随机播放音乐"
-        )
+        if song_name == "none":
+            return ActionResponse(
+                action=Action.RESPONSE, result="播放失败", response="请告诉我您想听的音乐名称"
+            )
+        music_intent = f"播放音乐 {song_name}"
 
         # 检查事件循环状态
         if not conn.loop.is_running():
