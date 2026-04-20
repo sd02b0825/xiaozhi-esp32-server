@@ -727,13 +727,23 @@ VLLM:
     model_name: lite
     api_key: 你的api_password
 TTS:
-  # 当前支持的type为edge、doubao，可自行适配
+  # 当前支持的type为edge、doubao、sherpa，可自行适配
   EdgeTTS:
     # 定义TTS API类型
     type: edge
     voice: zh-CN-XiaoxiaoNeural
     output_dir: tmp/
     # language: "中文"  # 指定输出语种,如:中文、英语、日语、韩语等,请根据所选音色支持的语言进行设置,不填则默认为中文
+  SherpaTTS:
+    # Sherpa-ONNX 本地离线语音合成（Matcha + Vocos），首次启动会自动下载模型到 model_dir
+    type: sherpa
+    model_dir: models/sherpa-tts
+    output_dir: tmp/
+    # num_threads: 2
+    # speed: 1.0
+    # sid: 0
+    # debug: false
+    # max_num_sentences: 1
   DoubaoTTS:
     # 定义TTS API类型
     type: doubao
