@@ -28,7 +28,7 @@ play_music_function_desc = {
             "properties": {
                 "song_name": {
                     "type": "string",
-                    "description": "歌曲名称，如果用户没有指定具体歌名则为'random', 明确指定的时返回音乐的名字 示例: ```用户:播放两只老虎\n参数：两只老虎``` ```用户:播放音乐 \n参数：random ```",
+                    "description": "歌曲名称，如果用户没有指定具体歌名则为'none',如果用户想随机播放歌曲则为'random',如果用户想知道能播放哪些歌曲则为'list', 明确指定的时返回音乐的名字 示例: ```用户:播放两只老虎\n参数：两只老虎``` ```用户:播放音乐 \n参数：none ``` ```用户:你有哪些音乐 \n参数：list ``` ```用户:随便播放一首 \n参数：random ```",
                 }
             },
             "required": ["song_name"],
@@ -40,35 +40,86 @@ play_music_function_desc = {
 @register_function("play_music", play_music_function_desc, ToolType.SYSTEM_CTL)
 def play_music(conn: "ConnectionHandler", song_name: str):
     try:
-        music_intent = (
-            f"播放音乐 {song_name}" if song_name != "random" else "随机播放音乐"
-        )
-
-        # 检查事件循环状态
-        if not conn.loop.is_running():
-            conn.logger.bind(tag=TAG).error("事件循环未运行，无法提交任务")
+        if song_name == "none":
             return ActionResponse(
-                action=Action.RESPONSE, result="系统繁忙", response="请稍后再试"
+                action=Action.RESPONSE, result="播放失败", response="请告诉我您想听的音乐名称"
+            )
+        music_intent = f"播放音乐 {song_name}"
+
+
+        initialize_music_handler(conn)
+        global MUSIC_CACHE
+
+        """处理音乐播放指令"""
+        clean_text = re.sub(r"[^\w\s]", "", music_intent).strip()
+        conn.logger.bind(tag=TAG).info(f"检查是否是音乐命令: {clean_text}")
+
+        # 尝试匹配具体歌名
+        if os.path.exists(MUSIC_CACHE["music_dir"]):
+            if time.time() - MUSIC_CACHE["scan_time"] > MUSIC_CACHE["refresh_time"]:
+                # 刷新音乐文件列表
+                MUSIC_CACHE["music_files"], MUSIC_CACHE["music_file_names"] = (
+                    get_music_files(MUSIC_CACHE["music_dir"], MUSIC_CACHE["music_ext"])
+                )
+                MUSIC_CACHE["scan_time"] = time.time()
+
+
+            if song_name == "list":
+                names = MUSIC_CACHE["music_file_names"]
+                if not names:
+                    resp = "暂无可用音乐"
+                elif len(names) > 5:
+                    resp = f"可播放的音乐有：{'、'.join(names[:5])}等{len(names)}首"
+                else:
+                    resp = f"可播放的音乐有：{'、'.join(names)}"
+                return ActionResponse(
+                    action=Action.RESPONSE, result="查询成功", response=resp
+                )
+            elif song_name == "random":
+                best_match=None
+                has_music=True
+            else :
+                potential_song = _extract_song_name(clean_text)
+                if potential_song:
+                    best_match = _find_best_match(potential_song, MUSIC_CACHE["music_files"])
+                    if best_match:
+                        conn.logger.bind(tag=TAG).info(f"找到最匹配的歌曲: {best_match}")
+                        has_music=True
+                    else :
+                        has_music= False
+        else :
+            has_music=False
+
+        if has_music:
+            # 检查事件循环状态
+            if not conn.loop.is_running():
+                conn.logger.bind(tag=TAG).error("事件循环未运行，无法提交任务")
+                return ActionResponse(
+                    action=Action.RESPONSE, result="系统繁忙", response="请稍后再试"
+                )
+
+            # 提交异步任务
+            task = conn.loop.create_task(
+                 play_local_music(conn, specific_file=best_match)  # 封装异步逻辑
             )
 
-        # 提交异步任务
-        task = conn.loop.create_task(
-            handle_music_command(conn, music_intent)  # 封装异步逻辑
-        )
+            # 非阻塞回调处理
+            def handle_done(f):
+                try:
+                    result=f.result()  # 可在此处理成功逻辑
+                except Exception as e:
+                    conn.logger.bind(tag=TAG).error(f"播放失败: {e}")
+                    
 
-        # 非阻塞回调处理
-        def handle_done(f):
-            try:
-                f.result()  # 可在此处理成功逻辑
-                conn.logger.bind(tag=TAG).info("播放完成")
-            except Exception as e:
-                conn.logger.bind(tag=TAG).error(f"播放失败: {e}")
+            task.add_done_callback(handle_done)
 
-        task.add_done_callback(handle_done)
-
-        return ActionResponse(
-            action=Action.NONE, result="指令已接收", response="正在为您播放音乐"
-        )
+            return ActionResponse(
+                action=Action.NONE, result="指令已接收", response="正在为您播放音乐"
+            )
+        else :
+            return ActionResponse(
+                action=Action.RESPONSE, result="播放失败", response="未找到匹配的音乐，需要我帮您随机播放一首音乐吗，还是说您想听点别的"
+            )
     except Exception as e:
         conn.logger.bind(tag=TAG).error(f"处理音乐意图错误: {e}")
         return ActionResponse(
@@ -152,7 +203,7 @@ async def handle_music_command(conn: "ConnectionHandler", text):
 
     """处理音乐播放指令"""
     clean_text = re.sub(r"[^\w\s]", "", text).strip()
-    conn.logger.bind(tag=TAG).debug(f"检查是否是音乐命令: {clean_text}")
+    conn.logger.bind(tag=TAG).info(f"检查是否是音乐命令: {clean_text}")
 
     # 尝试匹配具体歌名
     if os.path.exists(MUSIC_CACHE["music_dir"]):
@@ -170,9 +221,11 @@ async def handle_music_command(conn: "ConnectionHandler", text):
                 conn.logger.bind(tag=TAG).info(f"找到最匹配的歌曲: {best_match}")
                 await play_local_music(conn, specific_file=best_match)
                 return True
+            else :
+                return False
     # 检查是否是通用播放音乐命令
-    await play_local_music(conn)
-    return True
+    # await play_local_music(conn)
+    return False
 
 
 def _get_random_play_prompt(song_name):

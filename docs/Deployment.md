@@ -286,6 +286,7 @@ LLM:
 2、[如何部署集成index-tts本地语音](./index-stream-integration.md)<br/>
 3、[如何部署集成fish-speech本地语音](./fish-speech-integration.md)<br/>
 4、[如何部署集成PaddleSpeech本地语音](./paddlespeech-deploy.md)<br/>
+5、[如何部署集成Sherpa本地离线语音（sherpa-onnx）](./sherpa-tts-integration.md)<br/>
 ## 性能测试教程
 1、[各组件速度测试指南](./performance_tester.md)<br/>
 2、[定期公开测试结果](https://github.com/xinnan-tech/xiaozhi-performance-research)<br/>
