@@ -282,9 +282,20 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             ((DeviceServiceImpl) AopContext.currentProxy()).updateDeviceConnectionInfo(deviceById.getAgentId(),
                     deviceById.getId(), appVersion);
         } else {
-            // 如果设备不存在，则生成激活码
-            DeviceReportRespDTO.Activation code = buildActivation(macAddress, deviceReport);
-            response.setActivation(code);
+            // 如果设备不存在，根据MAC地址查询数据库获取设备验证码
+            String verifyCode = getVerifyCodeByMacAddress(macAddress);
+            if (StringUtils.isNotBlank(verifyCode)) {
+                DeviceReportRespDTO.Activation code = new DeviceReportRespDTO.Activation();
+                code.setCode(verifyCode);
+                String frontedUrl = sysParamsService.getValue(Constant.SERVER_FRONTED_URL, true);
+                code.setMessage(frontedUrl + "\n" + verifyCode);
+                code.setChallenge(macAddress);
+                response.setActivation(code);
+            }else{
+                // 如果设备不存在，则生成激活码
+                DeviceReportRespDTO.Activation code = buildActivation(macAddress, deviceReport);
+                response.setActivation(code);
+            }
         }
         DeviceReportRespDTO.AudioMonitor audioMonitor = new DeviceReportRespDTO.AudioMonitor();
         String url=sysParamsService.getValue(Constant.AUDIO_MONITOR_URL, true);
@@ -377,6 +388,15 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("mac_address", macAddress);
         return baseDao.selectOne(wrapper);
+    }
+
+    @Override
+    public String getVerifyCodeByMacAddress(String macAddress) {
+        DeviceEntity device = getDeviceByMacAddress(macAddress);
+        if (device == null) {
+            return null;
+        }
+        return device.getVerifyCode();
     }
 
     private DeviceReportRespDTO.ServerTime buildServerTime() {
