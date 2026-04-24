@@ -2,6 +2,7 @@ package xiaozhi.modules.zs.service;
 
 import java.util.List;
 
+import xiaozhi.modules.zs.dto.FamilyMemberBatchSaveDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberRespDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberSaveDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberUpdateDTO;
@@ -16,6 +17,15 @@ public interface FamilyMemberService {
      * @return 亲属响应
      */
     FamilyMemberRespDTO save(Long userId, FamilyMemberSaveDTO dto);
+
+    /**
+     * 批量保存亲属
+     *
+     * @param userId 用户ID
+     * @param dto    批量保存请求
+     * @return 亲属响应列表
+     */
+    List<FamilyMemberRespDTO> saveBatch(Long userId, FamilyMemberBatchSaveDTO dto);
 
     /**
      * 查询亲属列表

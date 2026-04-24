@@ -2,8 +2,11 @@ package xiaozhi.modules.zs.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+
+import java.util.List;
 
 /**
  * 声纹录音保存请求DTO
@@ -16,11 +19,9 @@ public class VoicePrintSaveDTO {
     @Schema(description = "设备验证码")
     private String verifyCode;
 
-    @Schema(description = "音频文件ID")
-    private String audioId;
-
-    @Schema(description = "base64编码的opus音频数据（与audioId二选一）")
-    private String audioBase64;
+    @NotEmpty(message = "音频数据列表不能为空")
+    @Schema(description = "base64编码的opus音频数据列表")
+    private List<String> audioBase64List;
 
     @NotBlank(message = "称呼不能为空")
     @Size(max = 50, message = "称呼长度不能超过50")

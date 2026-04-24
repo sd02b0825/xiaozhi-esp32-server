@@ -1,6 +1,7 @@
 package xiaozhi.modules.zs.service.impl;
 
 import java.util.Base64;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -50,33 +51,41 @@ public class VoicePrintServiceImpl implements VoicePrintService {
             throw new RenException("设备未绑定智能体");
         }
 
-        // 2. 处理音频：优先使用 audioBase64，否则使用 audioId
-        String audioId = dto.getAudioId();
-        if (StringUtils.isBlank(audioId) && StringUtils.isNotBlank(dto.getAudioBase64())) {
-            // Base64解码并存储音频
+        // 2. 处理音频列表并存储
+        List<String> audioBase64List = dto.getAudioBase64List();
+        if (audioBase64List == null || audioBase64List.isEmpty()) {
+            throw new RenException("音频数据列表不能为空");
+        }
+        List<String> audioIdList = new ArrayList<>();
+        for (String audioBase64 : audioBase64List) {
+            if (StringUtils.isBlank(audioBase64)) {
+                continue;
+            }
             try {
-                byte[] audioData = Base64.getDecoder().decode(dto.getAudioBase64());
-                audioId = agentChatAudioService.saveAudio(audioData);
+                byte[] audioData = Base64.getDecoder().decode(audioBase64);
+                String audioId = agentChatAudioService.saveAudio(audioData);
+                audioIdList.add(audioId);
                 log.info("声纹音频Base64解码并存储成功，audioId={}", audioId);
             } catch (Exception e) {
                 log.error("声纹音频Base64解码失败", e);
                 throw new RenException("音频数据解析失败");
             }
         }
-
-        if (StringUtils.isBlank(audioId)) {
-            throw new RenException("音频ID或音频数据不能都为空");
+        if (audioIdList.isEmpty()) {
+            throw new RenException("音频数据列表不能为空");
         }
 
-        // 3. 将音频插入聊天记录（如果尚未关联），确保归属检查能通过
-        saveAudioToChatHistory(audioId, device.getAgentId(),
-                dto.getMacAddress() != null ? dto.getMacAddress() : device.getMacAddress());
+        // 3. 将所有音频插入聊天记录（如果尚未关联），确保归属检查能通过
+        String macAddress = dto.getMacAddress() != null ? dto.getMacAddress() : device.getMacAddress();
+        for (String audioId : audioIdList) {
+            saveAudioToChatHistory(audioId, device.getAgentId(), macAddress);
+        }
 
-        // 4. 构建保存DTO并调用服务
+        // 4. 构建保存DTO并调用服务（声纹注册使用第一段音频）
         xiaozhi.modules.agent.dto.AgentVoicePrintSaveDTO saveDto =
                 new xiaozhi.modules.agent.dto.AgentVoicePrintSaveDTO();
         saveDto.setAgentId(device.getAgentId());
-        saveDto.setAudioId(audioId);
+        saveDto.setAudioId(audioIdList.get(0));
         saveDto.setSourceName(dto.getSourceName());
         saveDto.setIntroduce(dto.getIntroduce());
 

@@ -51,6 +51,7 @@ public class DeviceBatchServiceImpl implements DeviceBatchService {
                 device.setUserId(user.getId());
                 device.setCreator(user.getId());
                 device.setCreateDate(now);
+                device.setAppVersion("2.0.0");
                 device.setUpdater(user.getId());
                 device.setUpdateDate(now);
                 device.setLastConnectedAt(now);

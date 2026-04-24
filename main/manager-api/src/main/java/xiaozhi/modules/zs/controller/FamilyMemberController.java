@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.security.user.SecurityUser;
+import xiaozhi.modules.zs.dto.FamilyMemberBatchSaveDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberRespDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberSaveDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberUpdateDTO;
@@ -39,6 +40,15 @@ public class FamilyMemberController {
         UserDetail user = SecurityUser.getUser();
         FamilyMemberRespDTO result = familyMemberService.save(user.getId(), dto);
         return new Result<FamilyMemberRespDTO>().ok(result);
+    }
+
+    @PostMapping("/batch")
+    @Operation(summary = "批量添加亲属")
+    @RequiresPermissions("sys:role:normal")
+    public Result<List<FamilyMemberRespDTO>> saveBatch(@RequestBody @Valid FamilyMemberBatchSaveDTO dto) {
+        UserDetail user = SecurityUser.getUser();
+        List<FamilyMemberRespDTO> result = familyMemberService.saveBatch(user.getId(), dto);
+        return new Result<List<FamilyMemberRespDTO>>().ok(result);
     }
 
     @GetMapping

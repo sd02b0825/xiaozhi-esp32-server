@@ -16,6 +16,7 @@ import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.zs.dao.FamilyMemberDao;
+import xiaozhi.modules.zs.dto.FamilyMemberBatchSaveDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberRespDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberSaveDTO;
 import xiaozhi.modules.zs.dto.FamilyMemberUpdateDTO;
@@ -59,6 +60,40 @@ public class FamilyMemberServiceImpl implements FamilyMemberService {
         log.info("亲属保存成功: id={}, name={}", entity.getId(), entity.getName());
 
         return toRespDTO(entity);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<FamilyMemberRespDTO> saveBatch(Long userId, FamilyMemberBatchSaveDTO dto) {
+        // 1. 根据验证码查询设备
+        DeviceEntity device = getDeviceByVerifyCode(dto.getVerifyCode(), userId);
+        if (device == null) {
+            throw new RenException("设备不存在");
+        }
+
+        // 2. 批量构建并保存
+        Date now = new Date();
+        List<FamilyMemberEntity> entities = dto.getMembers().stream().map(member -> {
+            FamilyMemberEntity entity = new FamilyMemberEntity();
+            entity.setUserId(userId);
+            entity.setDeviceId(device.getId());
+            entity.setAgentId(device.getAgentId());
+            entity.setName(member.getName());
+            entity.setPhone(member.getPhone());
+            entity.setRemark(member.getRemark());
+            entity.setStatus(1);
+            entity.setSort(0);
+            entity.setCreator(userId);
+            entity.setUpdater(userId);
+            entity.setCreateDate(now);
+            entity.setUpdateDate(now);
+            return entity;
+        }).toList();
+
+        entities.forEach(familyMemberDao::insert);
+        log.info("亲属批量保存成功: count={}", entities.size());
+
+        return entities.stream().map(this::toRespDTO).collect(Collectors.toList());
     }
 
     @Override
