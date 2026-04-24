@@ -94,4 +94,7 @@ public class AgentEntity {
 
     @Schema(description = "更新时间")
     private Date updatedAt;
+
+    @Schema(description = "唤醒词")
+    private String wakeWord;
 }
