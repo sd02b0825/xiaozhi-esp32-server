@@ -1,6 +1,7 @@
 package xiaozhi.modules.zs.service.impl;
 
 import java.util.Date;
+import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -8,13 +9,20 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.exception.RenException;
+import xiaozhi.common.page.PageData;
+import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.modules.agent.dao.AgentDao;
+import xiaozhi.modules.agent.dto.AgentChatHistoryDTO;
 import xiaozhi.modules.agent.dto.AgentCreateDTO;
+import xiaozhi.modules.agent.entity.AgentChatHistoryEntity;
 import xiaozhi.modules.agent.entity.AgentEntity;
+import xiaozhi.modules.agent.service.AgentChatHistoryService;
 import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
@@ -31,6 +39,7 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
     private final DeviceDao deviceDao;
     private final AgentService agentService;
     private final AgentDao agentDao;
+    private final AgentChatHistoryService agentChatHistoryService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -118,6 +127,23 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
         updateWrapper.set("updater", userId);
         updateWrapper.set("update_date", new Date());
         deviceDao.update(null, updateWrapper);
+    }
+
+    @Override
+    public PageData<AgentChatHistoryDTO> getAgentChatHistory(Long userId, String agentId, Integer page, Integer limit) {
+        DeviceEntity device = getDeviceByAgentId(agentId, userId);
+        if (device == null) {
+            throw new RenException("设备与智能体绑定关系不存在");
+        }
+
+        Page<AgentChatHistoryEntity> pageParam = new Page<>(page, limit);
+        QueryWrapper<AgentChatHistoryEntity> wrapper = new QueryWrapper<>();
+        wrapper.eq("agent_id", agentId)
+                .orderByDesc("created_at");
+
+        IPage<AgentChatHistoryEntity> result = agentChatHistoryService.page(pageParam, wrapper);
+        List<AgentChatHistoryDTO> list = ConvertUtils.sourceToTarget(result.getRecords(), AgentChatHistoryDTO.class);
+        return new PageData<>(list, result.getTotal());
     }
 
     private DeviceEntity getDeviceByVerifyCode(String verifyCode, Long userId) {
