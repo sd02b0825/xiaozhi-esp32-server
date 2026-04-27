@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -110,10 +111,13 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
             throw new RenException("设备与智能体绑定关系不存在");
         }
 
-        device.setAgentId(null);
-        device.setUpdater(userId);
-        device.setUpdateDate(new Date());
-        deviceDao.updateById(device);
+        UpdateWrapper<DeviceEntity> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", device.getId());
+        updateWrapper.eq("user_id", userId);
+        updateWrapper.set("agent_id", null);
+        updateWrapper.set("updater", userId);
+        updateWrapper.set("update_date", new Date());
+        deviceDao.update(null, updateWrapper);
     }
 
     private DeviceEntity getDeviceByVerifyCode(String verifyCode, Long userId) {
