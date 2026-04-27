@@ -25,7 +25,6 @@ public class FamilyMemberBatchSaveDTO {
     @Data
     @Schema(description = "亲属信息")
     public static class MemberItem {
-        @NotBlank(message = "亲属姓名不能为空")
         @Size(max = 50, message = "姓名长度不能超过50")
         @Schema(description = "亲属姓名")
         private String name;

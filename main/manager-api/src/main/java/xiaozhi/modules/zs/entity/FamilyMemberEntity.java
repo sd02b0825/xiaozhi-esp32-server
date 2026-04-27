@@ -20,7 +20,7 @@ public class FamilyMemberEntity {
 
     @TableId(type = IdType.AUTO)
     @Schema(description = "ID")
-    private Long id;
+    private Integer id;
 
     @Schema(description = "所属用户ID")
     private Long userId;

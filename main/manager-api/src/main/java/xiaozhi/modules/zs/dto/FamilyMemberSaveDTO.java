@@ -13,7 +13,6 @@ public class FamilyMemberSaveDTO {
     @Schema(description = "设备验证码")
     private String verifyCode;
 
-    @NotBlank(message = "亲属姓名不能为空")
     @Size(max = 50, message = "姓名长度不能超过50")
     @Schema(description = "亲属姓名")
     private String name;

@@ -72,7 +72,7 @@ public class FamilyMemberController {
     @DeleteMapping
     @Operation(summary = "删除亲属")
     @RequiresPermissions("sys:role:normal")
-    public Result<Void> delete(@RequestParam String verifyCode, @RequestParam Long memberId) {
+    public Result<Void> delete(@RequestParam String verifyCode, @RequestParam Integer memberId) {
         UserDetail user = SecurityUser.getUser();
         familyMemberService.delete(user.getId(), verifyCode, memberId);
         return new Result<Void>().ok(null);

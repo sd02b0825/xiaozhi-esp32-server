@@ -8,7 +8,7 @@ import lombok.Data;
 public class FamilyMemberRespDTO {
 
     @Schema(description = "ID")
-    private Long id;
+    private Integer id;
 
     @Schema(description = "设备ID")
     private String deviceId;

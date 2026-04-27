@@ -38,7 +38,7 @@ public class FamilyMemberApiTest {
     private static final String TEST_MAC = "AA:BB:CC:DD:EE:31";
     private static final String TEST_VERIFY_CODE = "FAMILY124";
     private static String testAgentId;
-    private static Long testMemberId;
+    private static Integer testMemberId;
     private static boolean setupDone = false;
 
     @Autowired
@@ -209,7 +209,7 @@ public class FamilyMemberApiTest {
         log.info("=== 测试：更新不存在的亲属 ===");
 
         FamilyMemberUpdateDTO dto = new FamilyMemberUpdateDTO();
-        dto.setId(999999L);
+        dto.setId(999999);
         dto.setVerifyCode(TEST_VERIFY_CODE);
         dto.setName("不存在的亲属");
         dto.setPhone("10000000000");
@@ -229,7 +229,7 @@ public class FamilyMemberApiTest {
         log.info("=== 测试：删除不存在的亲属 ===");
 
         Assertions.assertThrows(RenException.class, () -> {
-            familyMemberService.delete(getTestUserId(), TEST_VERIFY_CODE, 999999L);
+            familyMemberService.delete(getTestUserId(), TEST_VERIFY_CODE, 999999);
         }, "亲属不存在应该抛出异常");
 
         log.info("异常捕获正确");

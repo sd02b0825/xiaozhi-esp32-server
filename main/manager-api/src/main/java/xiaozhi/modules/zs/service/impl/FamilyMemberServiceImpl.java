@@ -45,7 +45,7 @@ public class FamilyMemberServiceImpl implements FamilyMemberService {
         entity.setUserId(userId);
         entity.setDeviceId(device.getId());
         entity.setAgentId(device.getAgentId());
-        entity.setName(dto.getName());
+        entity.setName(nullableName(dto.getName()));
         entity.setPhone(dto.getPhone());
         entity.setRemark(dto.getRemark());
         entity.setStatus(1);
@@ -78,7 +78,7 @@ public class FamilyMemberServiceImpl implements FamilyMemberService {
             entity.setUserId(userId);
             entity.setDeviceId(device.getId());
             entity.setAgentId(device.getAgentId());
-            entity.setName(member.getName());
+            entity.setName(nullableName(member.getName()));
             entity.setPhone(member.getPhone());
             entity.setRemark(member.getRemark());
             entity.setStatus(1);
@@ -136,7 +136,7 @@ public class FamilyMemberServiceImpl implements FamilyMemberService {
         }
 
         // 3. 更新字段
-        entity.setName(dto.getName());
+        entity.setName(nullableName(dto.getName()));
         entity.setPhone(dto.getPhone());
         entity.setRemark(dto.getRemark());
         entity.setUpdater(userId);
@@ -150,7 +150,7 @@ public class FamilyMemberServiceImpl implements FamilyMemberService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void delete(Long userId, String verifyCode, Long memberId) {
+    public void delete(Long userId, String verifyCode, Integer memberId) {
         // 1. 根据验证码查询设备
         DeviceEntity device = getDeviceByVerifyCode(verifyCode, userId);
         if (device == null) {
@@ -191,5 +191,9 @@ public class FamilyMemberServiceImpl implements FamilyMemberService {
                 ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(entity.getCreateDate())
                 : null);
         return dto;
+    }
+
+    private String nullableName(String name) {
+        return name == null ? "" : name;
     }
 }

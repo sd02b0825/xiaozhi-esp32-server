@@ -52,5 +52,5 @@ public interface FamilyMemberService {
      * @param verifyCode 设备验证码
      * @param memberId   亲属ID
      */
-    void delete(Long userId, String verifyCode, Long memberId);
+    void delete(Long userId, String verifyCode, Integer memberId);
 }
