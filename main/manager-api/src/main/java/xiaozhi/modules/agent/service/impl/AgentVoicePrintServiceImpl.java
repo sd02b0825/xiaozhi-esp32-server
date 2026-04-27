@@ -73,14 +73,13 @@ public class AgentVoicePrintServiceImpl extends ServiceImpl<AgentVoicePrintDao, 
     public boolean insert(AgentVoicePrintSaveDTO dto) {
         // 获取音频数据
         ByteArrayResource resource = getVoicePrintAudioWAV(dto.getAgentId(), dto.getAudioId());
-        // 识别一下此声音是否注册过
-        IdentifyVoicePrintResponse response = identifyVoicePrint(dto.getAgentId(), resource);
-        if (response != null && response.getScore() > RECOGNITION) {
-            // 根据识别出的声纹ID查询对应的用户信息
-            AgentVoicePrintEntity existingVoicePrint = baseMapper.selectById(response.getSpeakerId());
-            String existingUserName = existingVoicePrint != null ? existingVoicePrint.getSourceName() : "未知用户";
-            throw new RenException(ErrorCode.VOICEPRINT_ALREADY_REGISTERED, existingUserName);
-        }
+        // 允许同一人注册多个声纹：关闭注册时的“已存在声纹”拦截逻辑
+        // IdentifyVoicePrintResponse response = identifyVoicePrint(dto.getAgentId(), resource);
+        // if (response != null && response.getScore() > RECOGNITION) {
+        //     AgentVoicePrintEntity existingVoicePrint = baseMapper.selectById(response.getSpeakerId());
+        //     String existingUserName = existingVoicePrint != null ? existingVoicePrint.getSourceName() : "未知用户";
+        //     throw new RenException(ErrorCode.VOICEPRINT_ALREADY_REGISTERED, existingUserName);
+        // }
         AgentVoicePrintEntity entity = ConvertUtils.sourceToTarget(dto, AgentVoicePrintEntity.class);
         // 开启事务
         return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
