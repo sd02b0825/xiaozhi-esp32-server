@@ -134,7 +134,7 @@ public class VoicePrintApiTest {
         dto.setVerifyCode(TEST_VERIFY_CODE);
         dto.setSourceName("测试称呼1");
         dto.setIntroduce("这是一个测试用称呼");
-        dto.setAudioId("sssdf11111");
+        dto.setAudioBase64List(List.of(Base64.getEncoder().encodeToString("mock_audio_data_1".getBytes())));
 
         VoicePrintRespDTO result = voicePrintService.save(getTestUserId(), dto);
 
@@ -162,7 +162,7 @@ public class VoicePrintApiTest {
         dto.setVerifyCode(TEST_VERIFY_CODE);
         dto.setSourceName("测试称呼_audioBase64");
         dto.setIntroduce("这是使用audioBase64保存的声纹");
-        dto.setAudioBase64(mockOpusBase64);
+        dto.setAudioBase64List(List.of(mockOpusBase64));
 
         VoicePrintRespDTO result = voicePrintService.save(getTestUserId(), dto);
 
@@ -185,7 +185,7 @@ public class VoicePrintApiTest {
         VoicePrintSaveDTO dto = new VoicePrintSaveDTO();
         dto.setVerifyCode(TEST_VERIFY_CODE);
         dto.setSourceName("测试称呼_非法audioBase64");
-        dto.setAudioBase64("这不是有效的Base64编码!!!");
+        dto.setAudioBase64List(List.of("这不是有效的Base64编码!!!"));
 
         Assertions.assertThrows(RenException.class, () -> {
             voicePrintService.save(getTestUserId(), dto);
