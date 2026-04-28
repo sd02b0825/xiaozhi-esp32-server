@@ -417,11 +417,12 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     @Override
     public String getVerifyCodeByMacAddress(String macAddress) {
-        DeviceEntity device = getDeviceByMacAddress(macAddress);
-        if (device == null) {
+       if (StringUtils.isBlank(macAddress)) {
             return null;
         }
-        return device.getVerifyCode();
+        QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
+        wrapper.eq("mac_address", macAddress);
+        return baseDao.selectOne(wrapper);
     }
 
     private DeviceReportRespDTO.ServerTime buildServerTime() {
