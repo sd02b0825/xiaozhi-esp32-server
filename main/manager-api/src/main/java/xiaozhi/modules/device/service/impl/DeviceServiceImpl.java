@@ -411,18 +411,19 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         }
         QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("mac_address", macAddress);
-        wrapper.isNotNull("agent_id"); 
+        wrapper.isNotNull("agent_id");
+        wrapper.ne("agent_id", "");
         return baseDao.selectOne(wrapper);
     }
 
     @Override
     public String getVerifyCodeByMacAddress(String macAddress) {
-         if (StringUtils.isBlank(macAddress)) {
+        if (StringUtils.isBlank(macAddress)) {
             return null;
         }
         QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("mac_address", macAddress);
-        DeviceEntity device baseDao.selectOne(wrapper);
+        DeviceEntity device = baseDao.selectOne(wrapper);
         if (device == null) {
             return null;
         }
