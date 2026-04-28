@@ -44,7 +44,6 @@ public class DeviceBatchTest {
         DeviceItemDTO item = new DeviceItemDTO();
         item.setMacAddress("AA:BB:CC:DD:EE:FF");
         item.setVerifyCode("123456");
-        item.setBoard("esp32-s3-box");
         devices.add(item);
 
         dto.setDevices(devices);
@@ -71,8 +70,7 @@ public class DeviceBatchTest {
         for (int i = 1; i <= 3; i++) {
             DeviceItemDTO item = new DeviceItemDTO();
             item.setMacAddress(String.format("11:22:33:44:55:%02d", i));
-            item.setVerifyCode("654321");
-            item.setBoard("esp32-s3-box-lite");
+            item.setVerifyCode(String.format("65432%d", i));
             devices.add(item);
         }
 
@@ -104,7 +102,6 @@ public class DeviceBatchTest {
         DeviceItemDTO item1 = new DeviceItemDTO();
         item1.setMacAddress(macAddress);
         item1.setVerifyCode("111111");
-        item1.setBoard("esp32-c3");
         devices1.add(item1);
         dto1.setDevices(devices1);
         deviceBatchService.batchAddDevice(dto1);
@@ -115,7 +112,6 @@ public class DeviceBatchTest {
         DeviceItemDTO item2 = new DeviceItemDTO();
         item2.setMacAddress(macAddress);
         item2.setVerifyCode("222222");
-        item2.setBoard("esp32-c3");
         devices2.add(item2);
         dto2.setDevices(devices2);
 
@@ -143,21 +139,18 @@ public class DeviceBatchTest {
         DeviceItemDTO item1 = new DeviceItemDTO();
         item1.setMacAddress("33:44:55:66:77:01");
         item1.setVerifyCode("333333");
-        item1.setBoard("esp32-s3-box");
         devices.add(item1);
 
         // 第二个设备 - 重复设备，应该失败
         DeviceItemDTO item2 = new DeviceItemDTO();
         item2.setMacAddress("33:44:55:66:77:01");
         item2.setVerifyCode("444444");
-        item2.setBoard("esp32-s3-box");
         devices.add(item2);
 
         // 第三个设备 - 新设备，应该成功
         DeviceItemDTO item3 = new DeviceItemDTO();
         item3.setMacAddress("33:44:55:66:77:02");
         item3.setVerifyCode("555555");
-        item3.setBoard("esp32-s3-box");
         devices.add(item3);
 
         dto.setDevices(devices);
@@ -181,14 +174,13 @@ public class DeviceBatchTest {
 
         String macAddress = "55:66:77:88:99:00";
         String verifyCode = "998877";
-        String board = "esp32-s3-box-lcd";
+        String board = "ESP32-S3-BOX";
 
         DeviceBatchAddDTO dto = new DeviceBatchAddDTO();
         List<DeviceItemDTO> devices = new ArrayList<>();
         DeviceItemDTO item = new DeviceItemDTO();
         item.setMacAddress(macAddress);
         item.setVerifyCode(verifyCode);
-        item.setBoard(board);
         devices.add(item);
         dto.setDevices(devices);
 

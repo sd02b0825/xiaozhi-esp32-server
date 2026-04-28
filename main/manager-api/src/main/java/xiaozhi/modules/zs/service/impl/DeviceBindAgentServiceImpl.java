@@ -14,6 +14,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import xiaozhi.common.constant.Constant;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.redis.RedisKeys;
@@ -40,6 +41,7 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
 
     private static final String DEFAULT_BOARD = "ESP32-S3-BOX";
     private static final String DEFAULT_APP_VERSION = "2.0.0";
+    private static final String DEFAULT_MEMORY_MODEL_ID = "Memory_mem_local_short";
 
     private final DeviceDao deviceDao;
     private final AgentService agentService;
@@ -86,6 +88,8 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
         AgentEntity agent = new AgentEntity();
         agent.setId(agentId);
         agent.setWakeWord(dto.getAgentName());
+        agent.setMemModelId(DEFAULT_MEMORY_MODEL_ID);
+        agent.setChatHistoryConf(Constant.ChatHistoryConfEnum.RECORD_TEXT_AUDIO.getCode());
         agent.setUpdater(userId);
         agent.setUpdatedAt(new Date());
         agentDao.updateById(agent);

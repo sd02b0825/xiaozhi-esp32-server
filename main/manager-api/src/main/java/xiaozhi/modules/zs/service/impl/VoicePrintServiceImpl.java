@@ -3,6 +3,7 @@ package xiaozhi.modules.zs.service.impl;
 import java.util.Base64;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -77,9 +78,10 @@ public class VoicePrintServiceImpl implements VoicePrintService {
 
         // 3. 将所有音频插入聊天记录（如果尚未关联），确保归属检查能通过
         String macAddress = dto.getMacAddress() != null ? dto.getMacAddress() : device.getMacAddress();
+        String sessionId = UUID.randomUUID().toString();
         for (int i = 0; i < audioIdList.size(); i++) {
             String audioId = audioIdList.get(i);
-            saveAudioToChatHistory(audioId, device.getAgentId(), macAddress, dto.getSourceName(), i + 1);
+            saveAudioToChatHistory(audioId, device.getAgentId(), macAddress, dto.getSourceName(), i + 1, sessionId);
         }
 
         // 4. 构建保存DTO并调用服务（声纹注册使用第一段音频）
@@ -193,7 +195,7 @@ public class VoicePrintServiceImpl implements VoicePrintService {
      * @param macAddress  MAC地址
      */
     private void saveAudioToChatHistory(String audioId, String agentId, String macAddress, String sourceName,
-            int index) {
+            int index, String sessionId) {
         // 检查音频是否已关联到当前智能体
         if (!agentChatHistoryService.isAudioOwnedByAgent(audioId, agentId)) {
             String displayName = StringUtils.isNotBlank(sourceName) ? sourceName : "未命名";
@@ -201,6 +203,7 @@ public class VoicePrintServiceImpl implements VoicePrintService {
             AgentChatHistoryEntity entity = AgentChatHistoryEntity.builder()
                     .audioId(audioId)
                     .agentId(agentId)
+                    .sessionId(sessionId)
                     .macAddress(macAddress != null ? macAddress : "voiceprint-registration")
                     .chatType((byte) 1) // 用户消息
                     .content("声纹注册音频-" + displayName + "-" + index)
