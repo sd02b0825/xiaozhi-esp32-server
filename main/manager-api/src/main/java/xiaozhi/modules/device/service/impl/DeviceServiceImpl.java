@@ -411,6 +411,8 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         }
         QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("mac_address", macAddress);
+        wrapper.ne("agent_id", null);
+        wrapper.ne("agent_id", '');
         return baseDao.selectOne(wrapper);
     }
 

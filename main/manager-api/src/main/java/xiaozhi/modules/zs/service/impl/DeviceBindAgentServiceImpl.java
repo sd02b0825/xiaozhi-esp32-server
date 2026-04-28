@@ -16,6 +16,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.common.page.PageData;
+import xiaozhi.common.redis.RedisKeys;
+import xiaozhi.common.redis.RedisUtils;
 import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.dto.AgentChatHistoryDTO;
@@ -36,10 +38,14 @@ import xiaozhi.modules.zs.service.DeviceBindAgentService;
 @RequiredArgsConstructor
 public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
 
+    private static final String DEFAULT_BOARD = "ESP32-S3-BOX";
+    private static final String DEFAULT_APP_VERSION = "2.0.0";
+
     private final DeviceDao deviceDao;
     private final AgentService agentService;
     private final AgentDao agentDao;
     private final AgentChatHistoryService agentChatHistoryService;
+    private final RedisUtils redisUtils;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -62,9 +68,19 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
 
         // 4. 更新设备的智能体ID
         device.setAgentId(agentId);
+        if (StringUtils.isBlank(device.getBoard())) {
+            device.setBoard(DEFAULT_BOARD);
+        }
+        if (StringUtils.isBlank(device.getAppVersion())) {
+            device.setAppVersion(DEFAULT_APP_VERSION);
+        }
+        if (device.getAutoUpdate() == null) {
+            device.setAutoUpdate(1);
+        }
         device.setUpdater(userId);
         device.setUpdateDate(new Date());
         deviceDao.updateById(device);
+        redisUtils.delete(RedisKeys.getAgentDeviceCountById(agentId));
 
         // 5. 更新智能体的唤醒词
         AgentEntity agent = new AgentEntity();
@@ -127,10 +143,12 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
         updateWrapper.set("updater", userId);
         updateWrapper.set("update_date", new Date());
         deviceDao.update(null, updateWrapper);
+        redisUtils.delete(RedisKeys.getAgentDeviceCountById(agentId));
     }
 
     @Override
-    public PageData<AgentChatHistoryDTO> getAgentChatHistory(Long userId, String agentId, Integer page, Integer limit) {
+    public PageData<AgentChatHistoryDTO> getAgentChatHistory(Long userId, String agentId, Integer page, Integer limit,
+            String speaker) {
         DeviceEntity device = getDeviceByAgentId(agentId, userId);
         if (device == null) {
             throw new RenException("设备与智能体绑定关系不存在");
@@ -138,8 +156,11 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
 
         Page<AgentChatHistoryEntity> pageParam = new Page<>(page, limit);
         QueryWrapper<AgentChatHistoryEntity> wrapper = new QueryWrapper<>();
-        wrapper.eq("agent_id", agentId)
-                .orderByDesc("created_at");
+        wrapper.eq("agent_id", agentId);
+        if (StringUtils.isNotBlank(speaker)) {
+            wrapper.eq("speaker", speaker);
+        }
+        wrapper.orderByDesc("created_at");
 
         IPage<AgentChatHistoryEntity> result = agentChatHistoryService.page(pageParam, wrapper);
         List<AgentChatHistoryDTO> list = ConvertUtils.sourceToTarget(result.getRecords(), AgentChatHistoryDTO.class);

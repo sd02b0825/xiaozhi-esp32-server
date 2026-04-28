@@ -45,7 +45,9 @@ public interface DeviceBindAgentService {
      * @param agentId 智能体ID
      * @param page    页码（从1开始）
      * @param limit   每页数量
+     * @param speaker 发言人，传空则不过滤
      * @return 聊天记录分页数据
      */
-    PageData<AgentChatHistoryDTO> getAgentChatHistory(Long userId, String agentId, Integer page, Integer limit);
+    PageData<AgentChatHistoryDTO> getAgentChatHistory(Long userId, String agentId, Integer page, Integer limit,
+            String speaker);
 }

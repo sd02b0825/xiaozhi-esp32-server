@@ -31,9 +31,5 @@ public class DeviceBatchAddDTO {
         @NotEmpty(message = "验证码不能为空")
         @Schema(description = "验证码")
         private String verifyCode;
-
-        @NotEmpty(message = "设备硬件型号不能为空")
-        @Schema(description = "设备硬件型号")
-        private String board;
     }
 }

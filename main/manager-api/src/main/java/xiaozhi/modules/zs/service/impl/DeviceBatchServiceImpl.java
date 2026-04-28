@@ -2,7 +2,9 @@ package xiaozhi.modules.zs.service.impl;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
@@ -24,6 +26,8 @@ import xiaozhi.modules.zs.service.DeviceBatchService;
 @RequiredArgsConstructor
 public class DeviceBatchServiceImpl implements DeviceBatchService {
 
+    private static final String DEFAULT_BOARD = "ESP32-S3-BOX";
+
     private final DeviceDao deviceDao;
 
     @Override
@@ -31,23 +35,46 @@ public class DeviceBatchServiceImpl implements DeviceBatchService {
         DeviceBatchAddRespDTO resp = new DeviceBatchAddRespDTO();
         List<FailItemDTO> failList = new ArrayList<>();
         int successCount = 0;
+        UserDetail user = SecurityUser.getUser();
+        Set<String> requestMacSet = new HashSet<>();
+        Set<String> requestVerifyCodeSet = new HashSet<>();
 
         for (DeviceBatchAddDTO.DeviceItemDTO item : dto.getDevices()) {
             try {
-                // 1. 检查设备是否已存在
-                DeviceEntity existDevice = getDeviceByMacAddress(item.getMacAddress());
-                if (existDevice != null) {
-                    failList.add(new FailItemDTO(item.getMacAddress(), "设备已存在"));
+                String macAddress = item.getMacAddress();
+                String verifyCode = item.getVerifyCode();
+
+                // 1. 校验本次请求内是否重复
+                if (!requestMacSet.add(macAddress)) {
+                    failList.add(new FailItemDTO(macAddress, "同一批次中MAC地址重复"));
                     continue;
                 }
-                UserDetail user = SecurityUser.getUser();
-                // 2. 创建设备记录
+                if (!requestVerifyCodeSet.add(verifyCode)) {
+                    failList.add(new FailItemDTO(macAddress, "同一批次中验证码重复"));
+                    continue;
+                }
+
+                // 2. 检查MAC地址是否已存在
+                DeviceEntity existDevice = getDeviceByMacAddress(macAddress);
+                if (existDevice != null) {
+                    failList.add(new FailItemDTO(macAddress, "设备已存在"));
+                    continue;
+                }
+
+                // 3. 检查当前用户下验证码是否已存在（绑定流程依赖验证码唯一）
+                DeviceEntity verifyCodeDevice = getDeviceByVerifyCode(verifyCode, user.getId());
+                if (verifyCodeDevice != null) {
+                    failList.add(new FailItemDTO(macAddress, "验证码已存在"));
+                    continue;
+                }
+
+                // 4. 创建设备记录
                 Date now = new Date();
                 DeviceEntity device = new DeviceEntity();
-                device.setId(item.getMacAddress());
-                device.setMacAddress(item.getMacAddress());
-                device.setBoard(item.getBoard());
-                device.setVerifyCode(item.getVerifyCode());
+                device.setId(macAddress);
+                device.setMacAddress(macAddress);
+                device.setBoard(DEFAULT_BOARD);
+                device.setVerifyCode(verifyCode);
                 device.setUserId(user.getId());
                 device.setCreator(user.getId());
                 device.setCreateDate(now);
@@ -74,6 +101,13 @@ public class DeviceBatchServiceImpl implements DeviceBatchService {
     private DeviceEntity getDeviceByMacAddress(String macAddress) {
         QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("mac_address", macAddress);
+        return deviceDao.selectOne(wrapper);
+    }
+
+    private DeviceEntity getDeviceByVerifyCode(String verifyCode, Long userId) {
+        QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
+        wrapper.eq("verify_code", verifyCode);
+        wrapper.eq("user_id", userId);
         return deviceDao.selectOne(wrapper);
     }
 }
