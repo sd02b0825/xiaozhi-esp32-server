@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PathVariable;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import xiaozhi.common.page.PageData;
@@ -68,9 +69,11 @@ public class DeviceBindAgentController {
     @RequiresPermissions("sys:role:normal")
     public Result<PageData<AgentChatHistoryDTO>> getAgentChatHistory(@PathVariable("id") String id,
             @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "20") Integer limit) {
+            @RequestParam(defaultValue = "20") Integer limit,
+            @Parameter(description = "发言人，可选，精确匹配") @RequestParam(required = false) String speaker) {
         UserDetail user = SecurityUser.getUser();
-        PageData<AgentChatHistoryDTO> result = deviceBindAgentService.getAgentChatHistory(user.getId(), id, page, limit);
+        PageData<AgentChatHistoryDTO> result = deviceBindAgentService.getAgentChatHistory(user.getId(), id, page, limit,
+                speaker);
         return new Result<PageData<AgentChatHistoryDTO>>().ok(result);
     }
 }
