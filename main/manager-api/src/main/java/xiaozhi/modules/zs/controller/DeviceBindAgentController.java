@@ -20,6 +20,7 @@ import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.agent.dto.AgentChatHistoryDTO;
 import xiaozhi.modules.security.user.SecurityUser;
+import xiaozhi.modules.zs.dto.DeviceBindAgentBatchDeleteDTO;
 import xiaozhi.modules.zs.dto.DeviceBindAgentDTO;
 import xiaozhi.modules.zs.dto.DeviceBindAgentRespDTO;
 import xiaozhi.modules.zs.dto.DeviceUpdateAgentDTO;
@@ -61,6 +62,15 @@ public class DeviceBindAgentController {
     public Result<Void> deleteAgent(@PathVariable("id") String id) {
         UserDetail user = SecurityUser.getUser();
         deviceBindAgentService.deleteAgent(user.getId(), id);
+        return new Result<Void>().ok(null);
+    }
+
+    @PostMapping("/bind-agent/batch-delete")
+    @Operation(summary = "批量删除设备智能体")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> deleteAgentsBatch(@RequestBody @Valid DeviceBindAgentBatchDeleteDTO dto) {
+        UserDetail user = SecurityUser.getUser();
+        deviceBindAgentService.deleteAgents(user.getId(), dto.getAgentIds());
         return new Result<Void>().ok(null);
     }
 

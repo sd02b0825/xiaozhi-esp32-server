@@ -1,5 +1,7 @@
 package xiaozhi.modules.zs.service;
 
+import java.util.List;
+
 import xiaozhi.common.page.PageData;
 import xiaozhi.modules.agent.dto.AgentChatHistoryDTO;
 import xiaozhi.modules.zs.dto.DeviceBindAgentDTO;
@@ -37,6 +39,14 @@ public interface DeviceBindAgentService {
      * @param agentId 智能体ID
      */
     void deleteAgent(Long userId, String agentId);
+
+    /**
+     * 批量删除设备绑定的智能体（解绑设备与智能体，规则与单条删除一致）
+     *
+     * @param userId   用户ID
+     * @param agentIds 智能体ID列表（会去重、忽略空白项）
+     */
+    void deleteAgents(Long userId, List<String> agentIds);
 
     /**
      * 查询智能体全部聊天记录（分页）

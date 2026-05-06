@@ -1,6 +1,8 @@
 package xiaozhi.modules.zs.service.impl;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
@@ -41,8 +43,12 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
 
     private static final String DEFAULT_BOARD = "ESP32-S3-BOX";
     private static final String DEFAULT_APP_VERSION = "2.0.0";
-    private static final String DEFAULT_MEMORY_MODEL_ID = "Memory_mem_local_short";
 
+    /** 本地短期记忆（mem_local_short） */
+    private static final String MEMORY_MEM_LOCAL_SHORT = "Memory_mem_local_short";
+
+    /** 智能体名称最大长度（与表字段 ai_agent.agent_name 一致） */
+    private static final int AGENT_NAME_MAX_LEN = 64;
     private final DeviceDao deviceDao;
     private final AgentService agentService;
     private final AgentDao agentDao;
@@ -63,9 +69,11 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
             throw new RenException("设备已绑定其他智能体");
         }
 
-        // 3. 使用AgentService创建智能体
+        // 3. 使用AgentService创建智能体（展示名称加时间戳保证不重复；唤醒词与用户输入一致，允许重复）
+        String wakeWord = normalizeWakeWord(dto.getAgentName());
+        String agentName = distinctAgentName(dto.getAgentName());
         AgentCreateDTO agentCreateDTO = new AgentCreateDTO();
-        agentCreateDTO.setAgentName(dto.getAgentName());
+        agentCreateDTO.setAgentName(agentName);
         String agentId = agentService.createAgent(agentCreateDTO);
 
         // 4. 更新设备的智能体ID
@@ -84,11 +92,12 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
         deviceDao.updateById(device);
         redisUtils.delete(RedisKeys.getAgentDeviceCountById(agentId));
 
-        // 5. 更新智能体的唤醒词
+        // 5. 更新智能体的唤醒词（保持用户输入，不与去重后的 agentName 绑定）
         AgentEntity agent = new AgentEntity();
         agent.setId(agentId);
-        agent.setWakeWord(dto.getAgentName());
-        agent.setMemModelId(DEFAULT_MEMORY_MODEL_ID);
+        agent.setWakeWord(wakeWord);
+        agent.setAgentName(agentName);
+        agent.setMemModelId(MEMORY_MEM_LOCAL_SHORT);
         agent.setChatHistoryConf(Constant.ChatHistoryConfEnum.RECORD_TEXT_AUDIO.getCode());
         agent.setUpdater(userId);
         agent.setUpdatedAt(new Date());
@@ -97,7 +106,7 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
         // 6. 构建响应
         DeviceBindAgentRespDTO resp = new DeviceBindAgentRespDTO();
         resp.setAgentId(agentId);
-        resp.setAgentName(dto.getAgentName());
+        resp.setAgentName(agentName);
         resp.setDeviceId(device.getId());
         resp.setMacAddress(device.getMacAddress());
         return resp;
@@ -116,25 +125,73 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
             throw new RenException("智能体不存在");
         }
 
+        String wakeWord = normalizeWakeWord(dto.getAgentName());
+        String agentName = normalizeWakeWord(dto.getAgentName());
         AgentEntity agent = new AgentEntity();
         agent.setId(agentId);
-        agent.setAgentName(dto.getAgentName());
-        agent.setWakeWord(dto.getAgentName());
+        agent.setAgentName(agentName);
+        agent.setWakeWord(wakeWord);
         agent.setUpdater(userId);
         agent.setUpdatedAt(new Date());
         agentDao.updateById(agent);
 
         DeviceBindAgentRespDTO resp = new DeviceBindAgentRespDTO();
         resp.setAgentId(agentId);
-        resp.setAgentName(dto.getAgentName());
+        resp.setAgentName(agentName);
         resp.setDeviceId(device.getId());
         resp.setMacAddress(device.getMacAddress());
         return resp;
     }
 
+    /** 唤醒词：与用户提交一致（trim），不做去重；空则用默认文案 */
+    private String normalizeWakeWord(String rawName) {
+        return StringUtils.isNotBlank(rawName) ? rawName.trim() : "小智";
+    }
+
+    /** 展示名称：前缀 trim 后截断，再拼接 {@code -}{@code 毫秒时间戳}，总长不超过 64。 */
+    private String distinctAgentName(String rawName) {
+        String base = StringUtils.isNotBlank(rawName) ? rawName.trim() : "小智";
+        String suffix = "-" + System.currentTimeMillis();
+        int maxBase = AGENT_NAME_MAX_LEN - suffix.length();
+        if (maxBase < 1) {
+            maxBase = 1;
+        }
+        String truncated = base.length() > maxBase ? base.substring(0, maxBase) : base;
+        return truncated + suffix;
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteAgent(Long userId, String agentId) {
+        unbindDeviceAgent(userId, agentId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteAgents(Long userId, List<String> agentIds) {
+        if (agentIds == null || agentIds.isEmpty()) {
+            throw new RenException("智能体ID列表不能为空");
+        }
+        List<String> distinct = new ArrayList<>();
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (String id : agentIds) {
+            if (StringUtils.isBlank(id)) {
+                continue;
+            }
+            String trimmed = id.trim();
+            if (seen.add(trimmed)) {
+                distinct.add(trimmed);
+            }
+        }
+        if (distinct.isEmpty()) {
+            throw new RenException("智能体ID列表不能为空");
+        }
+        for (String agentId : distinct) {
+            unbindDeviceAgent(userId, agentId);
+        }
+    }
+
+    private void unbindDeviceAgent(Long userId, String agentId) {
         DeviceEntity device = getDeviceByAgentId(agentId, userId);
         if (device == null) {
             throw new RenException("设备与智能体绑定关系不存在");
