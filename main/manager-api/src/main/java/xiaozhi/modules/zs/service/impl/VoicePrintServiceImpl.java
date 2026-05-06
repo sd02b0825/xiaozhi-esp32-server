@@ -11,12 +11,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.agent.entity.AgentChatHistoryEntity;
-import xiaozhi.modules.agent.entity.AgentVoicePrintEntity;
 import xiaozhi.modules.agent.service.AgentChatAudioService;
 import xiaozhi.modules.agent.service.AgentChatHistoryService;
 import xiaozhi.modules.agent.service.AgentVoicePrintService;
@@ -196,19 +196,26 @@ public class VoicePrintServiceImpl implements VoicePrintService {
      */
     private void saveAudioToChatHistory(String audioId, String agentId, String macAddress, String sourceName,
             int index, String sessionId) {
-        // 检查音频是否已关联到当前智能体
+        String displayName = StringUtils.isNotBlank(sourceName) ? sourceName : "未命名";
+        // isAudioOwnedByAgent：恰好一条 (audioId + agentId) 时视为已关联并跳过插入。
+        // 若该条为历史数据且 session_id 为空，这里必须补齐，否则会话列表里会一直出现 sessionId 为 null 的分组。
         if (!agentChatHistoryService.isAudioOwnedByAgent(audioId, agentId)) {
-            String displayName = StringUtils.isNotBlank(sourceName) ? sourceName : "未命名";
-            // 创建一条聊天记录，将音频关联到智能体
-            AgentChatHistoryEntity entity = AgentChatHistoryEntity.builder()
-                    .audioId(audioId)
-                    .agentId(agentId)
-                    .sessionId(sessionId)
-                    .macAddress(macAddress != null ? macAddress : "voiceprint-registration")
-                    .chatType((byte) 1) // 用户消息
-                    .content("声纹注册音频-" + displayName + "-" + index)
-                    .build();
+            AgentChatHistoryEntity entity = new AgentChatHistoryEntity();
+            entity.setAudioId(audioId);
+            entity.setAgentId(agentId);
+            entity.setSessionId(sessionId);
+            entity.setMacAddress(macAddress != null ? macAddress : "voiceprint-registration");
+            entity.setChatType((byte) 1); // 用户消息
+            entity.setContent("声纹注册音频-" + displayName + "-" + index);
             agentChatHistoryService.save(entity);
+        } else {
+            agentChatHistoryService.update(new LambdaUpdateWrapper<AgentChatHistoryEntity>()
+                    .set(AgentChatHistoryEntity::getSessionId, sessionId)
+                    .eq(AgentChatHistoryEntity::getAudioId, audioId)
+                    .eq(AgentChatHistoryEntity::getAgentId, agentId)
+                    .and(w -> w.isNull(AgentChatHistoryEntity::getSessionId)
+                            .or()
+                            .eq(AgentChatHistoryEntity::getSessionId, "")));
         }
     }
 }
