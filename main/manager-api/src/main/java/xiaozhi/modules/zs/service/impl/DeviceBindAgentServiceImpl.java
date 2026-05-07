@@ -194,7 +194,8 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
     private void unbindDeviceAgent(Long userId, String agentId) {
         DeviceEntity device = getDeviceByAgentId(agentId, userId);
         if (device == null) {
-            throw new RenException("设备与智能体绑定关系不存在");
+            // throw new RenException("设备与智能体绑定关系不存在");
+            return;
         }
 
         UpdateWrapper<DeviceEntity> updateWrapper = new UpdateWrapper<>();
