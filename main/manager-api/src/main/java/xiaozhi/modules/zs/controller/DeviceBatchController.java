@@ -2,6 +2,7 @@ package xiaozhi.modules.zs.controller;
 
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,6 +15,7 @@ import xiaozhi.common.utils.Result;
 import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.zs.dto.DeviceBatchAddDTO;
 import xiaozhi.modules.zs.dto.DeviceBatchAddRespDTO;
+import xiaozhi.modules.zs.dto.DeviceVerifyCodeUpdateDTO;
 import xiaozhi.modules.zs.service.DeviceBatchService;
 
 @Tag(name = "批量设备管理")
@@ -33,5 +35,13 @@ public class DeviceBatchController {
     public Result<DeviceBatchAddRespDTO> batchAddDevice(@RequestBody @Valid DeviceBatchAddDTO dto) {
         DeviceBatchAddRespDTO result = deviceBatchService.batchAddDevice(dto);
         return new Result<DeviceBatchAddRespDTO>().ok(result);
+    }
+
+    @PutMapping("/verify-code")
+    @Operation(summary = "修改设备验证码")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> updateVerifyCode(@RequestBody @Valid DeviceVerifyCodeUpdateDTO dto) {
+        deviceBatchService.updateVerifyCode(dto);
+        return new Result<Void>().ok(null);
     }
 }

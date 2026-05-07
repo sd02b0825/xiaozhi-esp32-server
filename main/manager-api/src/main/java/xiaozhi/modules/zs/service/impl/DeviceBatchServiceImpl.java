@@ -6,12 +6,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import xiaozhi.common.exception.RenException;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
@@ -19,6 +23,7 @@ import xiaozhi.modules.security.user.SecurityUser;
 import xiaozhi.modules.zs.dto.DeviceBatchAddDTO;
 import xiaozhi.modules.zs.dto.DeviceBatchAddRespDTO;
 import xiaozhi.modules.zs.dto.DeviceBatchAddRespDTO.FailItemDTO;
+import xiaozhi.modules.zs.dto.DeviceVerifyCodeUpdateDTO;
 import xiaozhi.modules.zs.service.DeviceBatchService;
 
 @Slf4j
@@ -96,6 +101,39 @@ public class DeviceBatchServiceImpl implements DeviceBatchService {
         resp.setFailCount(failList.size());
         resp.setFailList(failList);
         return resp;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateVerifyCode(DeviceVerifyCodeUpdateDTO dto) {
+        UserDetail user = SecurityUser.getUser();
+        String mac = StringUtils.trimToEmpty(dto.getMacAddress());
+        String newCode = StringUtils.trimToEmpty(dto.getNewVerifyCode());
+        if (StringUtils.isAnyBlank(mac, newCode)) {
+            throw new RenException("MAC地址或新验证码不能为空");
+        }
+
+        DeviceEntity device = getDeviceByMacAndUser(mac, user.getId());
+        if (device == null) {
+            throw new RenException("设备不存在");
+        }
+
+        DeviceEntity other = getDeviceByVerifyCode(newCode, user.getId());
+        if (other != null && !other.getId().equals(device.getId())) {
+            throw new RenException("验证码已存在");
+        }
+
+        Date now = new Date();
+        device.setVerifyCode(newCode);
+        device.setUpdater(user.getId());
+        device.setUpdateDate(now);
+        deviceDao.updateById(device);
+    }
+
+    private DeviceEntity getDeviceByMacAndUser(String macAddress, Long userId) {
+        return deviceDao.selectOne(new LambdaQueryWrapper<DeviceEntity>()
+                .eq(DeviceEntity::getMacAddress, macAddress)
+                .eq(DeviceEntity::getUserId, userId));
     }
 
     private DeviceEntity getDeviceByMacAddress(String macAddress) {
