@@ -211,11 +211,7 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
     @Override
     public PageData<AgentChatHistoryDTO> getAgentChatHistory(Long userId, String agentId, Integer page, Integer limit,
             String speaker) {
-        DeviceEntity device = getDeviceByAgentId(agentId, userId);
-        if (device == null) {
-            throw new RenException("设备与智能体绑定关系不存在");
-        }
-
+        
         Page<AgentChatHistoryEntity> pageParam = new Page<>(page, limit);
         QueryWrapper<AgentChatHistoryEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("agent_id", agentId);
