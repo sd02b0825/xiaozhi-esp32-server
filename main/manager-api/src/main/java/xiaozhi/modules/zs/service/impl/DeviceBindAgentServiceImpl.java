@@ -218,7 +218,7 @@ public class DeviceBindAgentServiceImpl implements DeviceBindAgentService {
         if (StringUtils.isNotBlank(speaker)) {
             wrapper.eq("speaker", speaker);
         }
-        wrapper.orderByDesc("created_at");
+        wrapper.orderByDesc("created_at").orderByDesc("id");
 
         IPage<AgentChatHistoryEntity> result = agentChatHistoryService.page(pageParam, wrapper);
         List<AgentChatHistoryDTO> list = ConvertUtils.sourceToTarget(result.getRecords(), AgentChatHistoryDTO.class);
