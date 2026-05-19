@@ -1,5 +1,7 @@
 package xiaozhi.modules.zs.dto;
 
+import java.util.List;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -10,8 +12,8 @@ import lombok.Data;
 @Schema(description = "声纹录音响应")
 public class VoicePrintRespDTO {
 
-    @Schema(description = "声纹ID")
-    private String id;
+    @Schema(description = "声纹ID列表")
+    private List<String> idList;
 
     @Schema(description = "音频文件ID")
     private String audioId;

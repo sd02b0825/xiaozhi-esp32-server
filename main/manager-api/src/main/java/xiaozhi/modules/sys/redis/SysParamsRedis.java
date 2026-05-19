@@ -27,6 +27,10 @@ public class SysParamsRedis {
         redisUtils.hSet(key, paramCode, paramValue);
     }
 
+    public void deleteServerConfig() {
+        redisUtils.delete(RedisKeys.getServerConfigKey());
+    }
+
     public String get(String paramCode) {
         String key = RedisKeys.getSysParamsKey();
         return (String) redisUtils.hGet(key, paramCode);

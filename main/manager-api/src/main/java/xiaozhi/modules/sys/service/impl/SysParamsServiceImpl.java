@@ -80,6 +80,7 @@ public class SysParamsServiceImpl extends BaseServiceImpl<SysParamsDao, SysParam
         insert(entity);
 
         sysParamsRedis.set(entity.getParamCode(), entity.getParamValue());
+        sysParamsRedis.deleteServerConfig();
     }
 
     @Override
@@ -91,6 +92,7 @@ public class SysParamsServiceImpl extends BaseServiceImpl<SysParamsDao, SysParam
         updateById(entity);
 
         sysParamsRedis.set(entity.getParamCode(), entity.getParamValue());
+        sysParamsRedis.deleteServerConfig();
     }
 
     /**
@@ -159,6 +161,7 @@ public class SysParamsServiceImpl extends BaseServiceImpl<SysParamsDao, SysParam
 
         // 删除
         deleteBatchIds(Arrays.asList(ids));
+        sysParamsRedis.deleteServerConfig();
     }
 
     @Override
@@ -192,10 +195,29 @@ public class SysParamsServiceImpl extends BaseServiceImpl<SysParamsDao, SysParam
     }
 
     @Override
+    public double getVoiceprintSimilarityThreshold() {
+        String paramValue = getValue(Constant.SERVER_VOICEPRINT_SIMILARITY_THRESHOLD, true);
+        if (StringUtils.isBlank(paramValue) || "null".equals(paramValue)) {
+            return 0.4D;
+        }
+
+        try {
+            double threshold = Double.parseDouble(paramValue);
+            if (threshold < 0D || threshold > 1D) {
+                return 0.4D;
+            }
+            return threshold;
+        } catch (NumberFormatException e) {
+            return 0.4D;
+        }
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public int updateValueByCode(String paramCode, String paramValue) {
         int count = baseDao.updateValueByCode(paramCode, paramValue);
         sysParamsRedis.set(paramCode, paramValue);
+        sysParamsRedis.deleteServerConfig();
         return count;
     }
 

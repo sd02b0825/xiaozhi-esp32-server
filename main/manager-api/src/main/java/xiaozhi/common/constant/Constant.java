@@ -137,6 +137,11 @@ public interface Constant {
     String SERVER_VOICE_PRINT = "server.voice_print";
 
     /**
+     * 声纹识别相似度阈值
+     */
+    String SERVER_VOICEPRINT_SIMILARITY_THRESHOLD = "server.voiceprint_similarity_threshold";
+
+    /**
      * mqtt密钥
      */
     String SERVER_MQTT_SECRET = "server.mqtt_signature_key";

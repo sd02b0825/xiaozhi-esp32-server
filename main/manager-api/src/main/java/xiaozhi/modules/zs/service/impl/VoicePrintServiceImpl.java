@@ -2,6 +2,7 @@ package xiaozhi.modules.zs.service.impl;
 
 import java.util.Base64;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -84,24 +85,36 @@ public class VoicePrintServiceImpl implements VoicePrintService {
             saveAudioToChatHistory(audioId, device.getAgentId(), macAddress, dto.getSourceName(), i + 1, sessionId);
         }
 
-        // 4. 构建保存DTO并调用服务（声纹注册使用第一段音频）
-        xiaozhi.modules.agent.dto.AgentVoicePrintSaveDTO saveDto =
-                new xiaozhi.modules.agent.dto.AgentVoicePrintSaveDTO();
-        saveDto.setAgentId(device.getAgentId());
-        saveDto.setAudioId(audioIdList.get(0));
-        saveDto.setSourceName(dto.getSourceName());
-        saveDto.setIntroduce(dto.getIntroduce());
+        // 4. 每段音频都单独保存并注册声纹
+        for (String audioId : audioIdList) {
+            xiaozhi.modules.agent.dto.AgentVoicePrintSaveDTO saveDto =
+                    new xiaozhi.modules.agent.dto.AgentVoicePrintSaveDTO();
+            saveDto.setAgentId(device.getAgentId());
+            saveDto.setAudioId(audioId);
+            saveDto.setSourceName(dto.getSourceName());
+            saveDto.setIntroduce(dto.getIntroduce());
 
-        boolean success = agentVoicePrintService.insert(saveDto);
-        if (!success) {
-            throw new RenException("声纹保存失败");
+            boolean success = agentVoicePrintService.insert(saveDto);
+            if (!success) {
+                throw new RenException("声纹保存失败");
+            }
         }
 
-        // 5. 查询并返回
-        return getByAgentId(device.getAgentId(), userId).stream()
-                .filter(vp -> audioIdList.get(0).equals(vp.getAudioId()))
+        // 5. 查询并返回本次保存结果，聚合本次上传产生的全部声纹ID
+        List<VoicePrintRespDTO> savedVoicePrintList = getByAgentId(device.getAgentId(), userId).stream()
+                .filter(vp -> containsAnyAudioId(vp, audioIdList))
+                .collect(Collectors.toList());
+        if (savedVoicePrintList.size() < audioIdList.size()) {
+            throw new RenException("声纹保存后查询失败");
+        }
+        VoicePrintRespDTO respDTO = savedVoicePrintList.stream()
+                .filter(vp -> containsAudioId(vp, audioIdList.get(0)))
                 .findFirst()
-                .orElseThrow(() -> new RenException("声纹保存后查询失败"));
+                .orElse(savedVoicePrintList.get(0));
+        respDTO.setIdList(savedVoicePrintList.stream()
+                .flatMap(vp -> vp.getIdList().stream())
+                .collect(Collectors.toList()));
+        return respDTO;
     }
 
     @Override
@@ -140,7 +153,7 @@ public class VoicePrintServiceImpl implements VoicePrintService {
 
         // 3. 查询并返回
         return getByAgentId(device.getAgentId(), userId).stream()
-                .filter(vp -> dto.getId().equals(vp.getId()))
+                .filter(vp -> containsId(vp, dto.getId()))
                 .findFirst()
                 .orElseThrow(() -> new RenException("声纹更新后查询失败"));
     }
@@ -177,7 +190,9 @@ public class VoicePrintServiceImpl implements VoicePrintService {
                 agentVoicePrintService.list(userId, agentId);
         return voList.stream().map(vo -> {
             VoicePrintRespDTO dto = new VoicePrintRespDTO();
-            dto.setId(vo.getId());
+            dto.setIdList(StringUtils.isNotBlank(vo.getId())
+                    ? Collections.singletonList(vo.getId())
+                    : Collections.emptyList());
             dto.setAudioId(vo.getAudioId());
             dto.setSourceName(vo.getSourceName());
             dto.setIntroduce(vo.getIntroduce());
@@ -185,6 +200,18 @@ public class VoicePrintServiceImpl implements VoicePrintService {
                     new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(vo.getCreateDate()) : null);
             return dto;
         }).collect(Collectors.toList());
+    }
+
+    private boolean containsAnyAudioId(VoicePrintRespDTO dto, List<String> audioIdList) {
+        return StringUtils.isNotBlank(dto.getAudioId()) && audioIdList.contains(dto.getAudioId());
+    }
+
+    private boolean containsAudioId(VoicePrintRespDTO dto, String audioId) {
+        return StringUtils.equals(dto.getAudioId(), audioId);
+    }
+
+    private boolean containsId(VoicePrintRespDTO dto, String id) {
+        return dto.getIdList() != null && dto.getIdList().contains(id);
     }
 
     /**

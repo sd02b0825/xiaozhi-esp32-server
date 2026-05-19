@@ -155,6 +155,7 @@ class VoiceprintProvider:
             # 准备multipart/form-data数据
             data = aiohttp.FormData()
             data.add_field('speaker_ids', ','.join(self.speaker_ids))
+            data.add_field('similarity_threshold', str(self.similarity_threshold))
             data.add_field('file', audio_data, filename='audio.wav', content_type='audio/wav')
             
             timeout = aiohttp.ClientTimeout(total=10)

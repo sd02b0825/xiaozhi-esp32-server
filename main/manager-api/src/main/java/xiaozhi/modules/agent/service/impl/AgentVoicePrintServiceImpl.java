@@ -385,6 +385,7 @@ public class AgentVoicePrintServiceImpl extends ServiceImpl<AgentVoicePrintDao, 
                 .map(AgentVoicePrintEntity::getId)
                 .collect(Collectors.joining(","));
         body.add("speaker_ids", speakerIds);
+        body.add("similarity_threshold", String.valueOf(sysParamsService.getVoiceprintSimilarityThreshold()));
         body.add("file", resource);
 
         // 创建请求头

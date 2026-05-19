@@ -13,6 +13,7 @@ import xiaozhi.common.utils.Result;
 import xiaozhi.common.validator.ValidatorUtils;
 import xiaozhi.modules.config.dto.AgentModelsDTO;
 import xiaozhi.modules.config.service.ConfigService;
+import xiaozhi.modules.sys.service.SysParamsService;
 
 /**
  * xiaozhi-server 配置获取
@@ -25,6 +26,7 @@ import xiaozhi.modules.config.service.ConfigService;
 @AllArgsConstructor
 public class ConfigController {
     private final ConfigService configService;
+    private final SysParamsService sysParamsService;
 
     @PostMapping("server-base")
     @Operation(summary = "服务端获取配置接口")
@@ -40,5 +42,11 @@ public class ConfigController {
         ValidatorUtils.validateEntity(dto);
         Object models = configService.getAgentModels(dto.getMacAddress(), dto.getSelectedModule());
         return new Result<Object>().ok(models);
+    }
+
+    @PostMapping("voiceprint-similarity-threshold")
+    @Operation(summary = "获取声纹识别相似度阈值")
+    public Result<Double> getVoiceprintSimilarityThreshold() {
+        return new Result<Double>().ok(sysParamsService.getVoiceprintSimilarityThreshold());
     }
 }
