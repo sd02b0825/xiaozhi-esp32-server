@@ -165,7 +165,18 @@ class ConnectionHandler:
         # 所以涉及到ASR的变量，需要在这里定义，属于connection的私有变量
         self.asr_audio = []
         self.asr_audio_queue = queue.Queue()
-        self.current_speaker = None  # 存储当前说话人
+        # current_speaker 仅作兼容字段，写入必须经过 set_voice_identity。
+        self.current_speaker = None
+        self.voice_identity = {
+            "current_speaker": None,
+            "source": None,
+            "confidence": 0.0,
+            "fail_count": 0,
+            "waiting_name_confirm": False,
+            "manual_confirmed": False,
+            "expire_at": 0,
+            "updated_at": 0,
+        }
 
         # llm相关变量
         self.dialogue = Dialogue()
@@ -837,6 +848,35 @@ class ConnectionHandler:
         self.prompt = prompt
         # 更新系统prompt至上下文
         self.dialogue.update_system_message(self.prompt)
+
+    def set_voice_identity(self, speaker, source, confidence=0.0, ttl_seconds=300):
+        """唯一的说话人身份写入口。"""
+        now = time.time()
+        self.voice_identity["current_speaker"] = speaker
+        self.voice_identity["source"] = source
+        self.voice_identity["confidence"] = confidence
+        self.voice_identity["fail_count"] = 0
+        self.voice_identity["waiting_name_confirm"] = False
+        self.voice_identity["manual_confirmed"] = source == "MANUAL_CONFIRM"
+        self.voice_identity["expire_at"] = now + ttl_seconds if speaker else 0
+        self.voice_identity["updated_at"] = now
+        self.current_speaker = speaker
+
+    def clear_voice_identity(self):
+        """清空当前说话人身份。"""
+        self.voice_identity["current_speaker"] = None
+        self.voice_identity["source"] = None
+        self.voice_identity["confidence"] = 0.0
+        self.voice_identity["fail_count"] = 0
+        self.voice_identity["waiting_name_confirm"] = False
+        self.voice_identity["manual_confirmed"] = False
+        self.voice_identity["expire_at"] = 0
+        self.voice_identity["updated_at"] = time.time()
+        self.current_speaker = None
+
+    def is_voice_identity_expired(self):
+        expire_at = self.voice_identity.get("expire_at", 0)
+        return bool(expire_at and time.time() > expire_at)
 
     def chat(self, query, depth=0):
         if query is not None:
