@@ -37,6 +37,14 @@ public interface FamilyMemberService {
     List<FamilyMemberRespDTO> list(Long userId, String verifyCode);
 
     /**
+     * 根据设备ID查询有效亲属列表
+     *
+     * @param deviceId 设备ID
+     * @return 亲属列表
+     */
+    List<FamilyMemberRespDTO> listByDeviceId(String deviceId);
+
+    /**
      * 更新亲属
      *
      * @param userId 用户ID

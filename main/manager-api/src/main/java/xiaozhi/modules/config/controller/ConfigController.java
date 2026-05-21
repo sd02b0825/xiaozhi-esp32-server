@@ -1,5 +1,7 @@
 package xiaozhi.modules.config.controller;
 
+import java.util.List;
+
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,8 +14,11 @@ import lombok.AllArgsConstructor;
 import xiaozhi.common.utils.Result;
 import xiaozhi.common.validator.ValidatorUtils;
 import xiaozhi.modules.config.dto.AgentModelsDTO;
+import xiaozhi.modules.config.dto.FamilyMembersDTO;
 import xiaozhi.modules.config.service.ConfigService;
 import xiaozhi.modules.sys.service.SysParamsService;
+import xiaozhi.modules.zs.dto.FamilyMemberRespDTO;
+import xiaozhi.modules.zs.service.FamilyMemberService;
 
 /**
  * xiaozhi-server 配置获取
@@ -27,6 +32,7 @@ import xiaozhi.modules.sys.service.SysParamsService;
 public class ConfigController {
     private final ConfigService configService;
     private final SysParamsService sysParamsService;
+    private final FamilyMemberService familyMemberService;
 
     @PostMapping("server-base")
     @Operation(summary = "服务端获取配置接口")
@@ -48,5 +54,12 @@ public class ConfigController {
     @Operation(summary = "获取声纹识别相似度阈值")
     public Result<Double> getVoiceprintSimilarityThreshold() {
         return new Result<Double>().ok(sysParamsService.getVoiceprintSimilarityThreshold());
+    }
+
+    @PostMapping("family-members")
+    @Operation(summary = "服务端获取设备亲属列表")
+    public Result<List<FamilyMemberRespDTO>> getFamilyMembers(@Valid @RequestBody FamilyMembersDTO dto) {
+        ValidatorUtils.validateEntity(dto);
+        return new Result<List<FamilyMemberRespDTO>>().ok(familyMemberService.listByDeviceId(dto.getDeviceId()));
     }
 }

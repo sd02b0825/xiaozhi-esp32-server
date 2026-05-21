@@ -117,6 +117,24 @@ public class FamilyMemberServiceImpl implements FamilyMemberService {
     }
 
     @Override
+    public List<FamilyMemberRespDTO> listByDeviceId(String deviceId) {
+        DeviceEntity device = deviceDao.selectById(deviceId);
+        if (device == null) {
+            throw new RenException("设备不存在");
+        }
+
+        List<FamilyMemberEntity> list = familyMemberDao.selectList(
+                new LambdaQueryWrapper<FamilyMemberEntity>()
+                        .eq(FamilyMemberEntity::getUserId, device.getUserId())
+                        .eq(FamilyMemberEntity::getDeviceId, device.getId())
+                        .eq(FamilyMemberEntity::getStatus, 1)
+                        .orderByAsc(FamilyMemberEntity::getSort)
+                        .orderByDesc(FamilyMemberEntity::getCreateDate));
+
+        return list.stream().map(this::toRespDTO).collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public FamilyMemberRespDTO update(Long userId, FamilyMemberUpdateDTO dto) {
         // 1. 根据验证码查询设备
