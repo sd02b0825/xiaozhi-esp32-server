@@ -5,6 +5,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -122,10 +123,14 @@ public class FamilyMemberServiceImpl implements FamilyMemberService {
         if (device == null) {
             throw new RenException("设备不存在");
         }
+        if (StringUtils.isBlank(device.getAgentId())) {
+            throw new RenException("设备未绑定智能体");
+        }
 
         List<FamilyMemberEntity> list = familyMemberDao.selectList(
                 new LambdaQueryWrapper<FamilyMemberEntity>()
                         .eq(FamilyMemberEntity::getUserId, device.getUserId())
+                        .eq(FamilyMemberEntity::getAgentId, device.getAgentId())
                         .eq(FamilyMemberEntity::getDeviceId, device.getId())
                         .eq(FamilyMemberEntity::getStatus, 1)
                         .orderByAsc(FamilyMemberEntity::getSort)
