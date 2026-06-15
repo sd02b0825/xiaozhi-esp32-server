@@ -29,7 +29,7 @@ class MemoryProvider(MemoryProviderBase):
             logger.bind(tag=TAG).error(f"详细错误: {traceback.format_exc()}")
             self.use_mem0 = False
 
-    async def save_memory(self, msgs, session_id=None):
+    async def save_memory(self, msgs, session_id=None, user_id=None):
         if not self.use_mem0:
             return None
         if len(msgs) < 2:
@@ -40,6 +40,10 @@ class MemoryProvider(MemoryProviderBase):
             messages = []
             for message in msgs:
                 if message.role == "system":
+                    continue
+
+                # 跳过标记为排除记忆的消息（如告别提示语、系统限制提示等非用户意图内容）
+                if getattr(message, 'exclude_from_memory', False):
                     continue
 
                 content = message.content
@@ -57,20 +61,22 @@ class MemoryProvider(MemoryProviderBase):
 
                 messages.append({"role": message.role, "content": content})
 
-            result = self.client.add(messages, user_id=self.role_id)
+            effective_user_id = user_id or self.role_id
+            result = self.client.add(messages, user_id=effective_user_id)
             logger.bind(tag=TAG).debug(f"Save memory result: {result}")
         except Exception as e:
             logger.bind(tag=TAG).error(f"保存记忆失败: {str(e)}")
             return None
 
-    async def query_memory(self, query: str) -> str:
+    async def query_memory(self, query: str, user_id=None) -> str:
         if not self.use_mem0:
             return ""
         try:
-            if not getattr(self, "role_id", None):
+            effective_user_id = user_id or getattr(self, "role_id", None)
+            if not effective_user_id:
                 return ""
 
-            filters = {"user_id": self.role_id}
+            filters = {"user_id": effective_user_id}
 
             search_query = query
             try:

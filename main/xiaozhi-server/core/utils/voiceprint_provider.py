@@ -15,9 +15,12 @@ logger = setup_logging()
 class VoiceprintResult:
     """单次声纹识别结果。身份状态由 xiaozhi-server 连接级状态机维护。"""
 
-    def __init__(self, status: str, speaker: str = "", score: float = 0.0, reason: str = ""):
+    def __init__(self, status: str, speaker: str = "", speaker_id: str = "",
+                 speaker_profile_id: str = None, score: float = 0.0, reason: str = ""):
         self.status = status
-        self.speaker = speaker
+        self.speaker = speaker              # 说话人展示名
+        self.speaker_id = speaker_id        # voiceprint-api 返回的原始 speaker_id（=voiceprint_id）
+        self.speaker_profile_id = speaker_profile_id or speaker_id  # 映射后的稳定 ID
         self.score = score
         self.reason = reason
 
@@ -80,16 +83,33 @@ class VoiceprintProvider:
                         logger.bind(tag=TAG).warning(f"声纹识别服务器不可用，声纹识别已禁用: {self.api_url}")
     
     def _parse_speakers(self) -> Dict[str, Dict[str, str]]:
-        """解析说话人配置"""
+        """解析说话人配置
+        兼容两种格式：
+          旧格式: {voiceprint_id},{sourceName},{introduce}
+          新格式: {voiceprint_id},{speaker_profile_id},{sourceName},{introduce}
+        """
         speaker_map = {}
         for speaker_str in self.speakers:
             try:
-                parts = speaker_str.split(",", 2)
-                if len(parts) >= 3:
+                parts = speaker_str.split(",", 3)  # max 4 fields
+                if len(parts) == 4:
+                    # 新格式：voiceprint_id, speaker_profile_id, name, desc
+                    voiceprint_id = parts[0].strip()
+                    speaker_profile_id = parts[1].strip()
+                    name = parts[2].strip()
+                    description = parts[3].strip() if len(parts) >= 4 else ""
+                    speaker_map[voiceprint_id] = {
+                        "name": name,
+                        "speaker_profile_id": speaker_profile_id,
+                        "description": description,
+                    }
+                elif len(parts) >= 3:
+                    # 旧格式：voiceprint_id, name, desc
                     speaker_id, name, description = parts[0].strip(), parts[1].strip(), parts[2].strip()
                     speaker_map[speaker_id] = {
                         "name": name,
-                        "description": description
+                        "speaker_profile_id": speaker_id,  # 旧格式：voiceprint_id 兼作 profile_id
+                        "description": description,
                     }
             except Exception as e:
                 logger.bind(tag=TAG).warning(f"解析说话人配置失败: {speaker_str}, 错误: {e}")
@@ -187,23 +207,28 @@ class VoiceprintProvider:
 
                         if status == "RECOGNIZED" and speaker_id in self.speaker_map:
                             result_name = self.speaker_map[speaker_id]["name"]
+                            # 从映射中获取 speaker_profile_id（新格式提供），否则 fallback 到 voiceprint_id
+                            mapped_profile_id = self.speaker_map[speaker_id].get("speaker_profile_id", speaker_id)
                             logger.bind(tag=TAG).info(f"声纹识别成功: {result_name} (相似度: {score:.3f})")
-                            return VoiceprintResult(status=status, speaker=result_name, score=score, reason=reason)
+                            return VoiceprintResult(status=status, speaker=result_name,
+                                                    speaker_id=speaker_id,
+                                                    speaker_profile_id=mapped_profile_id,
+                                                    score=score, reason=reason)
 
                         if status == "RECOGNIZED":
                             logger.bind(tag=TAG).warning(f"未识别的说话人ID: {speaker_id}")
 
-                        return VoiceprintResult(status=status, score=score, reason=reason)
+                        return VoiceprintResult(status=status, speaker_id=speaker_id, score=score, reason=reason)
                     else:
                         logger.bind(tag=TAG).error(f"声纹识别API错误: HTTP {response.status}")
-                        return VoiceprintResult(status="SERVICE_ERROR", reason=f"HTTP {response.status}")
+                        return VoiceprintResult(status="SERVICE_ERROR", speaker_id="", reason=f"HTTP {response.status}")
                         
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - api_start_time
             logger.bind(tag=TAG).error(f"声纹识别超时: {elapsed:.3f}s")
-            return VoiceprintResult(status="SERVICE_ERROR", reason="声纹识别超时")
+            return VoiceprintResult(status="SERVICE_ERROR", speaker_id="", reason="声纹识别超时")
         except Exception as e:
             elapsed = time.monotonic() - api_start_time
             logger.bind(tag=TAG).error(f"声纹识别失败: {e}")
-            return VoiceprintResult(status="SERVICE_ERROR", reason=str(e))
+            return VoiceprintResult(status="SERVICE_ERROR", speaker_id="", reason=str(e))
 

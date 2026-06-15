@@ -1,6 +1,7 @@
 import json
 import uuid
 import asyncio
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,6 +16,40 @@ from core.providers.tts.dto.dto import TTSMessageDTO, SentenceType
 
 TAG = __name__
 
+# 不需要查 PowerMem 记忆的关键词模式列表
+# 仅用于零延迟的快速预判，不替代意图识别的精准判断
+# 兜底策略：宁可多查不漏查，规则应保守
+_SKIP_MEMORY_PATTERNS = [
+    # 设备控制指令（打开/关闭/调节）
+    r'^(打开|关闭|开启|关掉|调高|调低|调大|调小|设置|切换)',
+    # 时间日期查询
+    r'(几点|几号|星期几|什么日期|今天日期|当前时间|现在时间)',
+    # 音乐/媒体控制
+    r'^(播放|暂停|停止|下一首|上一首|切歌)',
+    # 退出命令
+    r'^(退出|再见|拜拜|关闭系统|结束对话)',
+    # 音量/亮度/温度调节
+    r'^(音量|亮度|温度).*(调|大|小|高|低|上|下)',
+]
+
+
+def _should_skip_memory(text: str) -> bool:
+    """快速预判：关键词匹配判断是否需要跳过 PowerMem 记忆查询。
+
+    对于明显不需要记忆的场景（设备控制、时间查询、音乐播放等），
+    直接跳过记忆查询，避免不必要的 PowerMem API 调用。
+
+    Args:
+        text: 用户输入的文本（已提取 content 后的纯文本）
+
+    Returns:
+        True 表示应该跳过记忆查询，False 表示不确定/需要查询
+    """
+    for pattern in _SKIP_MEMORY_PATTERNS:
+        if re.search(pattern, text):
+            return True
+    return False
+
 
 async def handle_user_intent(conn: "ConnectionHandler", text):
     # 预处理输入文本，处理可能的JSON格式
@@ -27,6 +62,14 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
     except (json.JSONDecodeError, TypeError):
         pass
 
+    # 每轮新对话前重置 skip_memory 标记
+    conn.skip_memory = False
+
+    # 快速预判：关键词匹配（仅对 PowerMem 模式有实际意义，其他模式开销极低无需跳过）
+    if _should_skip_memory(text):
+        conn.skip_memory = True
+        conn.logger.bind(tag=TAG).debug(f"关键词预判：跳过PowerMem记忆查询, text={text[:50]}")
+
     # 检查是否有明确的退出命令
     _, filtered_text = remove_punctuation_and_length(text)
     if await check_direct_exit(conn, filtered_text):
@@ -36,13 +79,41 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
     if await checkWakeupWords(conn, filtered_text):
         return True
 
+    # 意图识别服务尚未初始化完成（后台初始化竞态），跳过本次意图分析
+    # 后续消息到达时初始化已完成，可正常处理
+    if conn.intent is None:
+        return False
+
     if conn.intent_type == "function_call":
         # 使用支持function calling的聊天方法,不再进行意图分析
+        # 快速预判结果仍然有效
         return False
     # 使用LLM进行意图分析
     intent_result = await analyze_intent_with_llm(conn, text)
     if not intent_result:
         return False
+
+    # 解析意图识别结果中的 need_memory 标记（仅 PowerMem 模式需要关注）
+    try:
+        intent_data = json.loads(intent_result)
+        if "need_memory" in intent_data:
+            need_memory = intent_data["need_memory"]
+            if not need_memory and not conn.skip_memory:
+                # 意图识别判定不需要记忆，且关键词预判也未命中，以意图识别为准
+                conn.skip_memory = True
+                function_name = ""
+                if "function_call" in intent_data:
+                    function_name = intent_data["function_call"].get("name", "")
+                conn.logger.bind(tag=TAG).debug(
+                    f"意图识别判定不需要记忆, intent={function_name}"
+                )
+            elif need_memory and conn.skip_memory:
+                # 意图识别判定需要记忆，覆盖关键词预判的结果（意图识别更精准）
+                conn.skip_memory = False
+                conn.logger.bind(tag=TAG).debug("意图识别判定需要记忆，覆盖关键词预判结果")
+    except (json.JSONDecodeError, TypeError):
+        pass
+
     # 会话开始时生成sentence_id
     conn.sentence_id = str(uuid.uuid4().hex)
     # 处理各种意图
@@ -102,7 +173,7 @@ async def process_intent_result(
                 conn.client_abort = False
 
                 def process_context_result():
-                    conn.dialogue.put(Message(role="user", content=original_text))
+                    conn.dialogue.put(Message(role="user", content=original_text, memory_user_id=conn.voice_identity.get("memory_user_id")))
 
                     from core.utils.current_time import get_current_time_info
 
@@ -143,7 +214,7 @@ async def process_intent_result(
 
             # 使用executor执行函数调用和结果处理
             def process_function_call():
-                conn.dialogue.put(Message(role="user", content=original_text))
+                conn.dialogue.put(Message(role="user", content=original_text, memory_user_id=conn.voice_identity.get("memory_user_id")))
 
                 # 使用统一工具处理器处理所有工具调用
                 try:

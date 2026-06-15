@@ -293,6 +293,13 @@ Memory:
     # - true: 使用用户画像模式(UserMemory)，自动提取用户信息
     # 用户画像功能支持: oceanbase、seekdb、sqlite (powermem 0.3.0+)
     enable_user_profile: true
+    # 画像缓存 TTL（秒），默认 300s（5分钟）
+    # 画像采用增量提取，新消息只会补充新字段不会覆盖已有信息，缓存时间长不影响准确性
+    # 设为 0 则禁用缓存
+    profile_cache_ttl: 300
+    # 记忆搜索返回条数，默认 15 条
+    # 减少该值可降低数据库查询压力，但可能遗漏部分相关记忆
+    search_limit: 15
     # ========== LLM 配置 ==========
     # 通义千问: https://bailian.console.aliyun.com/?apiKey=1#/api-key
     # 智谱AI(免费): https://bigmodel.cn/usercenter/proj-mgmt/apikeys

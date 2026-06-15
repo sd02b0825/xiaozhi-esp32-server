@@ -194,6 +194,7 @@ class ASRProviderBase(ABC):
 
             if conn.is_voice_identity_expired():
                 logger.bind(tag=TAG).info("说话人身份已过期，清空当前身份")
+                await self._flush_last_speaker_memory(conn)
                 conn.clear_voice_identity()
                 identity = conn.voice_identity
 
@@ -201,9 +202,31 @@ class ASRProviderBase(ABC):
             if status == "RECOGNIZED":
                 speaker_name = getattr(voiceprint_result, "speaker", "")
                 score = getattr(voiceprint_result, "score", 0.0)
-                if speaker_name:
+                speaker_profile_id = getattr(voiceprint_result, "speaker_profile_id", "")
+                voiceprint_id = getattr(voiceprint_result, "speaker_id", "")
+                if speaker_name and speaker_profile_id:
+                    # 检测说话人切换：按姓名比对（同人多声纹共享记忆，不因 profile_id 变化而 flush）
+                    old_speaker = identity.get("current_speaker")
+                    if old_speaker and old_speaker != speaker_name and conn.memory is not None:
+                        old_muid = identity.get("memory_user_id")
+                        if old_muid:
+                            asyncio.create_task(self._flush_dialogue_memory(conn, old_muid))
+                        # 说话人切换后，新说话人的首次对话跳过记忆查询
+                        # 刚切换过来没有相关记忆需要检索，跳过可节省2-5秒
+                        conn.skip_memory = True
+                        logger.bind(tag=TAG).info(
+                            f"说话人切换({old_speaker}→{speaker_name})，跳过首次记忆查询"
+                        )
+
+                    conn.set_voice_identity(
+                        speaker_name, "VOICEPRINT", confidence=score, ttl_seconds=600,
+                        speaker_profile_id=speaker_profile_id,
+                        voiceprint_id=voiceprint_id or speaker_profile_id,
+                    )
+                    logger.bind(tag=TAG).info(f"声纹身份更新: {speaker_name}, 分数: {score:.3f}, profile_id: {speaker_profile_id}")
+                elif speaker_name and not speaker_profile_id:
+                    # 特殊情况：有名字但无声纹ID（兼容旧格式）
                     conn.set_voice_identity(speaker_name, "VOICEPRINT", confidence=score, ttl_seconds=600)
-                    logger.bind(tag=TAG).info(f"声纹身份更新: {speaker_name}, 分数: {score:.3f}")
                 return True
 
             if identity.get("waiting_name_confirm"):
@@ -243,6 +266,79 @@ class ASRProviderBase(ABC):
             logger.bind(tag=TAG).error(f"处理声纹身份状态失败: {e}")
             logger.bind(tag=TAG).debug(f"异常堆栈: {traceback.format_exc()}")
             return True
+
+    async def _flush_dialogue_memory(self, conn: "ConnectionHandler", memory_user_id: str):
+        """将增量对话片段保存到指定 memory_user_id 的空间（说话人切换时调用）。
+
+        优化：改为异步后台任务执行，不阻塞说话人切换流程。
+        记忆保存由连接关闭时的 _save_and_close 兜底，即使后台任务失败也不影响对话。
+        """
+        try:
+            if not conn.memory or not memory_user_id:
+                return
+
+            # 获取上次为该用户保存的对话索引
+            last_idx = conn._last_saved_dialogue_index_by_user.get(memory_user_id, -1)
+            dialogue = conn.dialogue.dialogue
+            total = len(dialogue)
+
+            if total <= last_idx + 1:
+                logger.bind(tag=TAG).debug(f"无新对话需要保存: {memory_user_id}, last_idx={last_idx}")
+                return
+
+            # 只保存自上次保存后的新消息
+            new_msgs = dialogue[last_idx + 1:]
+            if len(new_msgs) >= 2:
+                # 异步后台保存：使用独立线程 + 独立事件循环，不占用主事件循环
+                # save_memory 可能因 NaN 错误降级逐条保存，耗时较长
+                # 放在主事件循环上会阻塞对话流程（LLM推理、TTS等）
+                threading.Thread(
+                    target=self._run_flush_in_thread,
+                    args=(conn, new_msgs, memory_user_id, total),
+                    daemon=True,
+                ).start()
+                conn._last_saved_dialogue_index_by_user[memory_user_id] = total - 1
+                logger.bind(tag=TAG).info(
+                    f"说话人切换 flush 记忆(异步): {memory_user_id}, 新增{len(new_msgs)}条消息"
+                )
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"flush 记忆失败: {e}")
+
+    async def _do_flush_memory(self, conn, new_msgs, memory_user_id, total):
+        """后台执行记忆保存（由 _flush_dialogue_memory 通过 create_task 调用）。"""
+        try:
+            await conn.memory.save_memory(
+                new_msgs, conn.session_id, user_id=memory_user_id
+            )
+            logger.bind(tag=TAG).info(
+                f"说话人切换 flush 记忆(后台完成): {memory_user_id}, 新增{len(new_msgs)}条消息"
+            )
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"flush 记忆(后台)失败: {e}")
+
+    def _run_flush_in_thread(self, conn, new_msgs, memory_user_id, total):
+        """在独立线程 + 独立事件循环中执行记忆保存，不占用主事件循环。
+
+        save_memory 可能因 NaN 错误降级为逐条保存，耗时较长。
+        放在主事件循环上会阻塞对话流程（LLM推理、TTS等），因此使用独立线程。
+        """
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(
+                    self._do_flush_memory(conn, new_msgs, memory_user_id, total)
+                )
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"flush 记忆(独立线程)失败: {e}")
+
+    async def _flush_last_speaker_memory(self, conn: "ConnectionHandler"):
+        """Flush 当前说话人的记忆（身份过期/连接关闭时调用）。"""
+        last_muid = conn.voice_identity.get("memory_user_id")
+        if last_muid:
+            await self._flush_dialogue_memory(conn, last_muid)
 
     async def reinquiry(self, conn: "ConnectionHandler", confirm_text):
         prompt = f"请你以```{confirm_text}```为开头，不要揣测用户想法，必须按我说的做，用富有感情的话，只发这一句，然后等待用户回答。！"
