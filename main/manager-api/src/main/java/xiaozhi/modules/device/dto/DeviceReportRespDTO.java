@@ -30,7 +30,7 @@ public class DeviceReportRespDTO {
     private AudioMonitor audioMonitor;
 
     @Schema(description = "灵芯配置")
-    private LingXin lingXing;
+    private LingXin lingXin;
 
     @Getter
     @Setter
