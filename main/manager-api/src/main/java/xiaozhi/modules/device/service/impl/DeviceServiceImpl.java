@@ -21,6 +21,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -43,7 +44,6 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.exception.ErrorCode;
@@ -56,6 +56,8 @@ import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.DateUtils;
 import xiaozhi.common.utils.ToolUtil;
+import xiaozhi.modules.agent.entity.AgentEntity;
+import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 import xiaozhi.modules.device.dto.DevicePageUserDTO;
@@ -72,7 +74,6 @@ import xiaozhi.modules.sys.service.SysUserUtilService;
 
 @Slf4j
 @Service
-@AllArgsConstructor
 public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> implements DeviceService {
 
     private final DeviceDao deviceDao;
@@ -80,6 +81,18 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     private final SysParamsService sysParamsService;
     private final RedisUtils redisUtils;
     private final OtaService otaService;
+    private final AgentService agentService;
+
+    public DeviceServiceImpl(DeviceDao deviceDao, SysUserUtilService sysUserUtilService,
+                            SysParamsService sysParamsService, RedisUtils redisUtils,
+                            OtaService otaService, @Lazy AgentService agentService) {
+        this.deviceDao = deviceDao;
+        this.sysUserUtilService = sysUserUtilService;
+        this.sysParamsService = sysParamsService;
+        this.redisUtils = redisUtils;
+        this.otaService = otaService;
+        this.agentService = agentService;
+    }
 
     @Async
     public void updateDeviceConnectionInfo(String agentId, String deviceId, String appVersion) {
@@ -218,6 +231,17 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                         deviceReport.getApplication() == null ? null : deviceReport.getApplication().getVersion());
                 response.setFirmware(firmware);
             }
+            // 赋值验证码
+            response.setVerify_code(deviceById.getVerifyCode());
+            // 查询ai_agent表的wake_word，赋值到DeviceReportRespDTO.wakeups
+            if (StringUtils.isNotBlank(deviceById.getAgentId())) {
+                AgentEntity agent = agentService.getAgentById(deviceById.getAgentId());
+                if (agent != null && StringUtils.isNotBlank(agent.getWakeWord())) {
+                    ArrayList wakeups = new ArrayList();
+                    wakeups.add(agent.getWakeWord());
+                    response.setWakeups(wakeups);
+                }
+            }
         }
 
         // 添加WebSocket配置
@@ -282,9 +306,20 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             ((DeviceServiceImpl) AopContext.currentProxy()).updateDeviceConnectionInfo(deviceById.getAgentId(),
                     deviceById.getId(), appVersion);
         } else {
-            // 如果设备不存在，则生成激活码
-            DeviceReportRespDTO.Activation code = buildActivation(macAddress, deviceReport);
-            response.setActivation(code);
+            // 如果设备不存在，根据MAC地址查询数据库获取设备验证码
+            String verifyCode = getVerifyCodeByMacAddress(macAddress);
+            if (StringUtils.isNotBlank(verifyCode)) {
+                DeviceReportRespDTO.Activation code = new DeviceReportRespDTO.Activation();
+                code.setCode(verifyCode);
+                String frontedUrl = sysParamsService.getValue(Constant.SERVER_FRONTED_URL, true);
+                code.setMessage(frontedUrl + "\n" + verifyCode);
+                code.setChallenge(macAddress);
+                response.setActivation(code);
+            }else{
+                // 如果设备不存在，则生成激活码
+                DeviceReportRespDTO.Activation code = buildActivation(macAddress, deviceReport);
+                response.setActivation(code);
+            }
         }
         DeviceReportRespDTO.AudioMonitor audioMonitor = new DeviceReportRespDTO.AudioMonitor();
         String url=sysParamsService.getValue(Constant.AUDIO_MONITOR_URL, true);
@@ -384,7 +419,23 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         }
         QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("mac_address", macAddress);
+        wrapper.isNotNull("agent_id");
+        wrapper.ne("agent_id", "");
         return baseDao.selectOne(wrapper);
+    }
+
+    @Override
+    public String getVerifyCodeByMacAddress(String macAddress) {
+        if (StringUtils.isBlank(macAddress)) {
+            return null;
+        }
+        QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
+        wrapper.eq("mac_address", macAddress);
+        DeviceEntity device = baseDao.selectOne(wrapper);
+        if (device == null) {
+            return null;
+        }
+        return device.getVerifyCode();
     }
 
     private DeviceReportRespDTO.ServerTime buildServerTime() {

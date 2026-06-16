@@ -346,18 +346,19 @@ public class ConfigServiceImpl implements ConfigService {
             voiceprintConfig.put("speakers", speakers);
 
             // 获取声纹识别相似度阈值，默认0.4
-            String thresholdStr = sysParamsService.getValue("server.voiceprint_similarity_threshold", true);
-            if (StringUtils.isNotBlank(thresholdStr) && !"null".equals(thresholdStr)) {
-                try {
-                    double threshold = Double.parseDouble(thresholdStr);
-                    voiceprintConfig.put("similarity_threshold", threshold);
-                } catch (NumberFormatException e) {
-                    // 如果解析失败，使用默认值0.4
-                    voiceprintConfig.put("similarity_threshold", 0.4);
-                }
-            } else {
-                voiceprintConfig.put("similarity_threshold", 0.4);
-            }
+            // String thresholdStr = sysParamsService.getValue("server.voiceprint_similarity_threshold", true);
+            // if (StringUtils.isNotBlank(thresholdStr) && !"null".equals(thresholdStr)) {
+            //     try {
+            //         double threshold = Double.parseDouble(thresholdStr);
+            //         voiceprintConfig.put("similarity_threshold", threshold);
+            //     } catch (NumberFormatException e) {
+            //         // 如果解析失败，使用默认值0.4
+            //         voiceprintConfig.put("similarity_threshold", 0.4);
+            //     }
+            // } else {
+            //     voiceprintConfig.put("similarity_threshold", 0.4);
+            // }
+            voiceprintConfig.put("similarity_threshold", sysParamsService.getVoiceprintSimilarityThreshold());
 
             result.put("voiceprint", voiceprintConfig);
         } catch (Exception e) {

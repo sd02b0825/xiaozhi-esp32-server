@@ -11,10 +11,10 @@ class MemoryProvider(MemoryProviderBase):
     def __init__(self, config, summary_memory=None):
         super().__init__(config)
 
-    async def save_memory(self, msgs, session_id=None):
+    async def save_memory(self, msgs, session_id=None, user_id=None):
         logger.bind(tag=TAG).debug("mem_report_only mode: No memory saving or summarization is performed.")
         return None
 
-    async def query_memory(self, query: str) -> str:
+    async def query_memory(self, query: str, user_id=None) -> str:
         logger.bind(tag=TAG).debug("mem_report_only mode: No memory query is performed.")
         return ""

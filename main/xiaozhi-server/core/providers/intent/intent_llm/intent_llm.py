@@ -76,42 +76,59 @@ class IntentProvider(IntentProviderBase):
             "3. 从可用函数列表中选择最匹配的函数\n"
             "4. 如果找到匹配的函数，生成对应的function_call 格式\n"
             '5. 如果没有找到匹配的函数，返回{"function_call": {"name": "continue_chat"}}\n\n'
+            "【记忆查询判断】\n"
+            "你还需要判断用户意图是否需要查询记忆（用户的历史对话记录和个人画像）。\n\n"
+            "需要查记忆的场景（need_memory: true）：\n"
+            "- 用户引用过去的对话内容（如'我之前说过...'、'你还记得...'）\n"
+            "- 用户询问个人信息（如'我这个名字是什么'、'我家在哪里'）\n"
+            "- 需要个性化回复的闲聊（如'给我推荐个电影'、'今天我能做什么'）\n"
+            "- 模糊或不确定是否需要记忆时，默认需要\n\n"
+            "不需要查记忆的场景（need_memory: false）：\n"
+            "- 设备控制指令（如'打开灯'、'调高音量'）\n"
+            "- 信息查询工具调用（如'今天天气'、'现在几点'）\n"
+            "- 音乐播放控制（如'播放一首歌'）\n"
+            "- 明确的退出指令（如'关闭'、'再见'）\n\n"
+            "在返回的 JSON 中增加 \"need_memory\" 字段：\n"
+            "- need_memory: true 表示需要查询记忆\n"
+            "- need_memory: false 表示不需要查询记忆\n\n"
             "返回格式要求：\n"
             "1. 必须返回纯JSON格式，不要包含任何其他文字\n"
             "2. 必须包含function_call字段\n"
             "3. function_call必须包含name字段\n"
-            "4. 如果函数需要参数，必须包含arguments字段\n\n"
+            "4. 如果函数需要参数，必须包含arguments字段\n"
+            "5. 必须包含need_memory字段（true或false）\n\n"
             "示例：\n"
             "```\n"
             "用户: 现在几点了？\n"
-            '返回: {"function_call": {"name": "result_for_context"}}\n'
+            '返回: {"function_call": {"name": "result_for_context"}, "need_memory": false}\n'
             "```\n"
             "```\n"
             "用户: 当前电池电量是多少？\n"
-            '返回: {"function_call": {"name": "get_battery_level", "arguments": {"response_success": "当前电池电量为{value}%", "response_failure": "无法获取Battery的当前电量百分比"}}}\n'
+            '返回: {"function_call": {"name": "get_battery_level", "arguments": {"response_success": "当前电池电量为{value}%", "response_failure": "无法获取Battery的当前电量百分比"}}, "need_memory": false}\n'
             "```\n"
             "```\n"
             "用户: 当前屏幕亮度是多少？\n"
-            '返回: {"function_call": {"name": "self_screen_get_brightness"}}\n'
+            '返回: {"function_call": {"name": "self_screen_get_brightness"}, "need_memory": false}\n'
             "```\n"
             "```\n"
             "用户: 设置屏幕亮度为50%\n"
-            '返回: {"function_call": {"name": "self_screen_set_brightness", "arguments": {"brightness": 50}}}\n'
+            '返回: {"function_call": {"name": "self_screen_set_brightness", "arguments": {"brightness": 50}}, "need_memory": false}\n'
             "```\n"
             "```\n"
             "用户: 我想结束对话\n"
-            '返回: {"function_call": {"name": "handle_exit_intent", "arguments": {"say_goodbye": "goodbye"}}}\n'
+            '返回: {"function_call": {"name": "handle_exit_intent", "arguments": {"say_goodbye": "goodbye"}}, "need_memory": false}\n'
             "```\n"
             "```\n"
             "用户: 你好啊\n"
-            '返回: {"function_call": {"name": "continue_chat"}}\n'
+            '返回: {"function_call": {"name": "continue_chat"}, "need_memory": true}\n'
             "```\n\n"
             "注意：\n"
             "1. 只返回JSON格式，不要包含任何其他文字\n"
-            '2. 优先检查用户查询是否为基础信息（时间、日期等），如是则返回{"function_call": {"name": "result_for_context"}}，不需要arguments参数\n'
-            '3. 如果没有找到匹配的函数，返回{"function_call": {"name": "continue_chat"}}\n'
+            '2. 优先检查用户查询是否为基础信息（时间、日期等），如是则返回{"function_call": {"name": "result_for_context"}, "need_memory": false}\n'
+            '3. 如果没有找到匹配的函数，返回{"function_call": {"name": "continue_chat"}, "need_memory": true}\n'
             "4. 确保返回的JSON格式正确，包含所有必要的字段\n"
             "5. result_for_context不需要任何参数，系统会自动从上下文获取信息\n"
+            "6. need_memory字段是必填的，不能省略\n"
             "特殊说明：\n"
             "- 当用户单次输入包含多个指令时（如'打开灯并且调高音量'）\n"
             "- 请返回多个function_call组成的JSON数组\n"

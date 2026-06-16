@@ -19,6 +19,7 @@ from core.handle.receiveAudioHandle import startToChat
 from core.handle.reportHandle import enqueue_asr_report
 from core.utils.util import remove_punctuation_and_length
 from core.handle.receiveAudioHandle import handleAudioMessage
+from core.providers.tts.dto.dto import ContentType, TTSMessageDTO, SentenceType
 from typing import Optional, Tuple, List, NamedTuple, TYPE_CHECKING
 
 
@@ -125,24 +126,32 @@ class ASRProviderBase(ABC):
 
             if isinstance(voiceprint_result, Exception):
                 logger.bind(tag=TAG).error(f"声纹识别失败: {voiceprint_result}")
-                speaker_name = ""
-            else:
-                speaker_name = voiceprint_result
+                voiceprint_result = None
 
-            # 判断 ASR 结果类型
+            # 提取用户原话，先交给连接级声纹状态机处理
             if isinstance(raw_text, dict):
-                # FunASR 返回的 dict 格式
-                if speaker_name:
-                    raw_text["speaker"] = speaker_name
-
-                # 记录识别结果
                 if raw_text.get("language"):
                     logger.bind(tag=TAG).info(f"识别语言: {raw_text['language']}")
                 if raw_text.get("emotion"):
                     logger.bind(tag=TAG).info(f"识别情绪: {raw_text['emotion']}")
                 if raw_text.get("content"):
                     logger.bind(tag=TAG).info(f"识别文本: {raw_text['content']}")
+                user_text = raw_text.get("content", "")
+            else:
+                if raw_text:
+                    logger.bind(tag=TAG).info(f"识别文本: {raw_text}")
+                user_text = raw_text
+           
+            if not await self._handle_voice_identity(conn, voiceprint_result, user_text):
+                return
+
+            speaker_name = conn.current_speaker
+
+            # 判断 ASR 结果类型
+            if isinstance(raw_text, dict):
+                # FunASR 返回的 dict 格式
                 if speaker_name:
+                    raw_text["speaker"] = speaker_name
                     logger.bind(tag=TAG).info(f"识别说话人: {speaker_name}")
 
                 # 转换为 JSON 字符串用于下游
@@ -150,18 +159,12 @@ class ASRProviderBase(ABC):
                 content_for_length_check = raw_text.get("content", "")
             else:
                 # 其他 ASR 返回的纯文本
-                if raw_text:
-                    logger.bind(tag=TAG).info(f"识别文本: {raw_text}")
                 if speaker_name:
                     logger.bind(tag=TAG).info(f"识别说话人: {speaker_name}")
 
                 # 构建包含说话人信息的JSON字符串
                 enhanced_text = self._build_enhanced_text(raw_text, speaker_name)
                 content_for_length_check = raw_text
-           
-            # 处理用户对声纹确认的回答
-            if not await self._handle_voiceprint_confirm(conn, speaker_name, enhanced_text):
-                return
 
             # 性能监控
             total_time = time.monotonic() - total_start_time
@@ -172,6 +175,15 @@ class ASRProviderBase(ABC):
             self.stop_ws_connection()
 
             if text_len > 0:
+                from core.handle.alarmConfirmHandler import (
+                    try_handle_alarm_confirm_response,
+                )
+
+                if await try_handle_alarm_confirm_response(conn, enhanced_text):
+                    audio_snapshot = asr_audio_task.copy()
+                    enqueue_asr_report(conn, enhanced_text, audio_snapshot)
+                    return
+
                 # 使用自定义模块进行上报
                 await startToChat(conn, enhanced_text)
                 audio_snapshot = asr_audio_task.copy()
@@ -182,106 +194,203 @@ class ASRProviderBase(ABC):
 
             logger.bind(tag=TAG).debug(f"异常详情: {traceback.format_exc()}")
     
-    async def _handle_voiceprint_confirm(self, conn: "ConnectionHandler", speaker_name: str, enhanced_text: str) -> bool:
-        """处理用户对声纹确认的回答"""
+    async def _handle_voice_identity(self, conn: "ConnectionHandler", voiceprint_result, user_text: str) -> bool:
+        """维护连接级说话人身份状态。"""
         try:
-            # ============ 【新增】处理用户对声纹确认的回答 ============
-            if getattr(conn, 'waiting_voiceprint_confirm', False):
-                total_start_time = time.monotonic()
-                logger.bind(tag=TAG).debug("进入询问用户后方法")
-                # 用户正在确认流程中，先处理回答
-                user_text = enhanced_text
+            identity = getattr(conn, "voice_identity", None)
+            if identity is None:
+                return True
 
-                # 如果是JSON格式，提取content字段
-                try:
-                    if isinstance(user_text, str) and user_text.startswith('{'):
-                        user_json = json.loads(user_text)
-                        user_text = user_json.get('content', user_text)
-                except json.JSONDecodeError:
-                    pass
+            if conn.is_voice_identity_expired():
+                logger.bind(tag=TAG).info("说话人身份已过期，清空当前身份")
+                await self._flush_last_speaker_memory(conn)
+                conn.clear_voice_identity()
+                identity = conn.voice_identity
 
-                confirm_speaker = getattr(conn, 'confirm_speaker', None)
-                pending_content = getattr(conn, 'pending_voiceprint_content', None)  # 保存的原始内容
+            status = getattr(voiceprint_result, "status", None)
+            if status == "RECOGNIZED":
+                speaker_name = getattr(voiceprint_result, "speaker", "")
+                score = getattr(voiceprint_result, "score", 0.0)
+                speaker_profile_id = getattr(voiceprint_result, "speaker_profile_id", "")
+                voiceprint_id = getattr(voiceprint_result, "speaker_id", "")
+                if speaker_name and speaker_profile_id:
+                    # 检测说话人切换：按姓名比对（同人多声纹共享记忆，不因 profile_id 变化而 flush）
+                    old_speaker = identity.get("current_speaker")
+                    if old_speaker and old_speaker != speaker_name and conn.memory is not None:
+                        old_muid = identity.get("memory_user_id")
+                        if old_muid:
+                            asyncio.create_task(self._flush_dialogue_memory(conn, old_muid))
+                        # 说话人切换后，新说话人的首次对话跳过记忆查询
+                        # 刚切换过来没有相关记忆需要检索，跳过可节省2-5秒
+                        conn.skip_memory = True
+                        logger.bind(tag=TAG).info(
+                            f"说话人切换({old_speaker}→{speaker_name})，跳过首次记忆查询"
+                        )
 
-                # 重置状态
-                conn.waiting_voiceprint_confirm = False
-                conn.confirm_speaker = None
-                conn.pending_voiceprint_content = None
+                    conn.set_voice_identity(
+                        speaker_name, "VOICEPRINT", confidence=score, ttl_seconds=600,
+                        speaker_profile_id=speaker_profile_id,
+                        voiceprint_id=voiceprint_id or speaker_profile_id,
+                    )
+                    logger.bind(tag=TAG).info(f"声纹身份更新: {speaker_name}, 分数: {score:.3f}, profile_id: {speaker_profile_id}")
+                elif speaker_name and not speaker_profile_id:
+                    # 特殊情况：有名字但无声纹ID（兼容旧格式）
+                    conn.set_voice_identity(speaker_name, "VOICEPRINT", confidence=score, ttl_seconds=600)
+                return True
 
-                logger.bind(tag=TAG).info(f"用户输入内容: {user_text}, confirm_speaker: {confirm_speaker}, pending_content: {pending_content}")
-                from core.handle.sendAudioHandle import send_stt_message
+            if identity.get("waiting_name_confirm"):
+                name = self._parse_name_from_confirm_reply(user_text)
 
-                # 简单关键词匹配
-                if any(kw in user_text for kw in ["不", "不是", "no", "否", "换人"]):
-                    logger.bind(tag=TAG).info(f"用户否认说话人: {confirm_speaker}, 清理缓存")
-                    # 清理当前说话人
-                    conn.current_speaker = None
-                    # 如果 voiceprint_provider 支持清理缓存，可调用
-                    if hasattr(conn.voiceprint_provider, 'clear_session_cache'):
-                        await conn.voiceprint_provider.clear_session_cache(conn.session_id)
-                    confirm_text = f"好的，那请问您是谁呢？"
-                    await self.reinquiry(conn, confirm_text)
-                    total_time = time.monotonic() - total_start_time
-                    logger.bind(tag=TAG).debug(f"声纹确认回答处理完成（否认），总耗时: {total_time:.3f}s")
-                    return False
-                elif any(kw in user_text for kw in ["是", "对的", "没错", "yes", "对", "继续", "是我"]):
-                    logger.bind(tag=TAG).info(f"用户确认说话人: {confirm_speaker}")
-                    await send_stt_message(conn, f"好的，继续和{confirm_speaker}聊天~")
-
-                    # 🎯 关键：恢复处理之前保存的用户问题
-                    if pending_content:
-                        logger.bind(tag=TAG).info(f"恢复处理用户问题: {pending_content}")
-                        await startToChat(conn, pending_content)
-                    total_time = time.monotonic() - total_start_time
-                    logger.bind(tag=TAG).debug(f"声纹确认回答处理完成（确认），总耗时: {total_time:.3f}s")
-                    return False
-                else:
-                    # 用户回答不明确，再次询问
-                    confirm_text = f"我没听清，您是{confirm_speaker}吗？请回答是或不是~"
-                    await self.reinquiry(conn, confirm_text)
-                    # 重新设置等待确认标记
-                    conn.waiting_voiceprint_confirm = True
-                    conn.confirm_speaker = confirm_speaker
-                    conn.pending_voiceprint_content = pending_content  # 保留待处理内容
-                    total_time = time.monotonic() - total_start_time
-                    logger.bind(tag=TAG).debug(f"声纹确认回答处理完成（不明确），总耗时: {total_time:.3f}s")
+                if not name:
+                    await self._speak_fixed_text(conn, "我没听清，请问您怎么称呼？")
                     return False
 
-            # ============ 确认处理结束 ============
-            # ============ 【新增】声纹确认询问处理 ============
-            need_confirm = False
-            confirm_speaker_name = None
-            total_start_time = time.monotonic()
+                conn.set_voice_identity(name, "MANUAL_CONFIRM", confidence=0.5, ttl_seconds=300)
+                logger.bind(tag=TAG).info(f"用户手动确认说话人: {name}")
+                await self._speak_fixed_text(conn, f"好的，后续我会默认您是{name}。")
+                return False
 
-            if speaker_name and speaker_name.startswith("__CONFIRM__:"):
-                # 🎯 检测到确认标记，提取真实说话人名称
-                confirm_speaker_name = speaker_name.replace("__CONFIRM__:", "")
-                need_confirm = True
-                logger.bind(tag=TAG).warning(f"触发声纹确认询问: {confirm_speaker_name}")
+            if status is None:
+                return True
 
-                # 直接发送确认询问，不调用 startToChat
-                confirm_text = f"请问当前还是{confirm_speaker_name}在跟我聊天吗？"
+            if status == "SERVICE_ERROR":
+                logger.bind(tag=TAG).warning(f"声纹服务异常，不更新身份: {getattr(voiceprint_result, 'reason', '')}")
+                return True
 
-                # 设置等待确认标记（可选：用于后续处理用户回答）
-                conn.waiting_voiceprint_confirm = True
-                conn.confirm_speaker = confirm_speaker_name
-                # 使用自定义模块进行上报
-                await self.reinquiry(conn, confirm_text)
-                # 记录日志后直接返回，不继续聊天流程
-                total_time = time.monotonic() - total_start_time
-                logger.bind(tag=TAG).debug(f"声纹确认询问处理完成，总耗时: {total_time:.3f}s")
-                conn.pending_voiceprint_content = enhanced_text  # 保留待处理内容
-                return False # 🎯 关键：直接返回，不调用 startToChat
+            if identity.get("manual_confirmed") and identity.get("current_speaker"):
+                logger.bind(tag=TAG).debug(f"声纹未命中，沿用手动确认身份: {identity.get('current_speaker')}")
+                return True
+
+            identity["fail_count"] = identity.get("fail_count", 0) + 1
+            logger.bind(tag=TAG).info(f"连续声纹识别失败计数: {identity['fail_count']}")
+
+            if identity["fail_count"] >= 3:
+                identity["fail_count"] = 0
+                identity["waiting_name_confirm"] = True
+                await self._speak_fixed_text(conn, "我没能识别出当前说话人，请问您怎么称呼？")
+                return False
 
             return True
         except Exception as e:
-            logger.bind(tag=TAG).error(f"处理声纹确认失败: {e}")
+            logger.bind(tag=TAG).error(f"处理声纹身份状态失败: {e}")
             logger.bind(tag=TAG).debug(f"异常堆栈: {traceback.format_exc()}")
             return True
+
+    async def _flush_dialogue_memory(self, conn: "ConnectionHandler", memory_user_id: str):
+        """将增量对话片段保存到指定 memory_user_id 的空间（说话人切换时调用）。
+
+        优化：改为异步后台任务执行，不阻塞说话人切换流程。
+        记忆保存由连接关闭时的 _save_and_close 兜底，即使后台任务失败也不影响对话。
+        """
+        try:
+            if not conn.memory or not memory_user_id:
+                return
+
+            # 获取上次为该用户保存的对话索引
+            last_idx = conn._last_saved_dialogue_index_by_user.get(memory_user_id, -1)
+            dialogue = conn.dialogue.dialogue
+            total = len(dialogue)
+
+            if total <= last_idx + 1:
+                logger.bind(tag=TAG).debug(f"无新对话需要保存: {memory_user_id}, last_idx={last_idx}")
+                return
+
+            # 只保存自上次保存后的新消息
+            new_msgs = dialogue[last_idx + 1:]
+            if len(new_msgs) >= 2:
+                # 异步后台保存：使用独立线程 + 独立事件循环，不占用主事件循环
+                # save_memory 可能因 NaN 错误降级逐条保存，耗时较长
+                # 放在主事件循环上会阻塞对话流程（LLM推理、TTS等）
+                threading.Thread(
+                    target=self._run_flush_in_thread,
+                    args=(conn, new_msgs, memory_user_id, total),
+                    daemon=True,
+                ).start()
+                conn._last_saved_dialogue_index_by_user[memory_user_id] = total - 1
+                logger.bind(tag=TAG).info(
+                    f"说话人切换 flush 记忆(异步): {memory_user_id}, 新增{len(new_msgs)}条消息"
+                )
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"flush 记忆失败: {e}")
+
+    async def _do_flush_memory(self, conn, new_msgs, memory_user_id, total):
+        """后台执行记忆保存（由 _flush_dialogue_memory 通过 create_task 调用）。"""
+        try:
+            await conn.memory.save_memory(
+                new_msgs, conn.session_id, user_id=memory_user_id
+            )
+            logger.bind(tag=TAG).info(
+                f"说话人切换 flush 记忆(后台完成): {memory_user_id}, 新增{len(new_msgs)}条消息"
+            )
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"flush 记忆(后台)失败: {e}")
+
+    def _run_flush_in_thread(self, conn, new_msgs, memory_user_id, total):
+        """在独立线程 + 独立事件循环中执行记忆保存，不占用主事件循环。
+
+        save_memory 可能因 NaN 错误降级为逐条保存，耗时较长。
+        放在主事件循环上会阻塞对话流程（LLM推理、TTS等），因此使用独立线程。
+        """
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(
+                    self._do_flush_memory(conn, new_msgs, memory_user_id, total)
+                )
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"flush 记忆(独立线程)失败: {e}")
+
+    async def _flush_last_speaker_memory(self, conn: "ConnectionHandler"):
+        """Flush 当前说话人的记忆（身份过期/连接关闭时调用）。"""
+        last_muid = conn.voice_identity.get("memory_user_id")
+        if last_muid:
+            await self._flush_dialogue_memory(conn, last_muid)
 
     async def reinquiry(self, conn: "ConnectionHandler", confirm_text):
         prompt = f"请你以```{confirm_text}```为开头，不要揣测用户想法，必须按我说的做，用富有感情的话，只发这一句，然后等待用户回答。！"
         await startToChat(conn, prompt)
+
+    async def _speak_fixed_text(self, conn: "ConnectionHandler", text: str):
+        """直接播报固定提示，避免只发送 start 状态导致客户端卡住。"""
+        from core.handle.sendAudioHandle import send_tts_message
+
+        conn.sentence_id = str(uuid.uuid4().hex)
+        conn.tts_MessageText = text
+        await send_tts_message(conn, "start")
+        conn.client_is_speaking = True
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=conn.sentence_id,
+                sentence_type=SentenceType.FIRST,
+                content_type=ContentType.ACTION,
+            )
+        )
+        conn.tts.tts_one_sentence(conn, ContentType.TEXT, content_detail=text)
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=conn.sentence_id,
+                sentence_type=SentenceType.LAST,
+                content_type=ContentType.ACTION,
+            )
+        )
+
+    def _parse_name_from_confirm_reply(self, text: str) -> str:
+        """仅在等待姓名确认状态下解析姓名。"""
+        text = (text or "").strip()
+        if not text:
+            return ""
+
+        for prefix in ["我是", "我叫", "叫我", "我的名字是", "我名字叫"]:
+            if prefix in text:
+                name = text.split(prefix, 1)[1].strip(" ，,。.!！?？")
+                return name[:20]
+
+        if 1 <= len(text) <= 20:
+            return text.strip(" ，,。.!！?？")
+        return ""
 
     def _build_enhanced_text(self, text: str, speaker_name: Optional[str]) -> str:
         """构建包含说话人信息的文本（仅用于纯文本ASR）"""

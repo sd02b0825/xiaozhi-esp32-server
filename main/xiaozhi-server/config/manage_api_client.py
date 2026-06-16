@@ -183,6 +183,17 @@ async def get_agent_models(
     )
 
 
+async def get_family_members_by_device(device_id: str) -> Optional[Dict]:
+    """根据设备ID获取有效亲属列表"""
+    if not device_id or not ManageApiClient._instance:
+        return None
+    return await ManageApiClient._instance._execute_async_request(
+        "POST",
+        "/config/family-members",
+        json={"deviceId": device_id},
+    )
+
+
 async def generate_and_save_chat_summary(session_id: str) -> Optional[Dict]:
     """生成并保存聊天记录总结"""
     try:

@@ -36,6 +36,9 @@ async def report(conn: "ConnectionHandler", type, text, opus_data, report_time):
             audio_data = opus_to_wav(conn, opus_data)
         else:
             audio_data = None
+        # 仅用户发言(type=1)上报身份信息，AI回复(type=2)不记录发言人
+        speaker = conn.current_speaker if type == 1 else None
+        identity = conn.voice_identity if type == 1 else {}
         # 执行异步上报
         await manage_report(
             mac_address=conn.device_id,
@@ -44,7 +47,7 @@ async def report(conn: "ConnectionHandler", type, text, opus_data, report_time):
             content=text,
             audio=audio_data,
             report_time=report_time,
-            speaker=conn.current_speaker,
+            speaker=speaker,
         )
     except Exception as e:
         conn.logger.bind(tag=TAG).error(f"聊天记录上报失败: {e}")

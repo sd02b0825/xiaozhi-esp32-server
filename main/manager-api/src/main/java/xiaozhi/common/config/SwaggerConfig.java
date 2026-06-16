@@ -80,6 +80,14 @@ public class SwaggerConfig {
     }
 
     @Bean
+    public GroupedOpenApi zsApi() {
+        return GroupedOpenApi.builder()
+                .group("zs")
+                .pathsToMatch("/zs/**")
+                .build();
+    }
+
+    @Bean
     public GroupedOpenApi knowledgeApi() {
         return GroupedOpenApi.builder()
                 .group("knowledge")

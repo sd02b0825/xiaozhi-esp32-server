@@ -13,6 +13,8 @@ class Message:
             tool_calls=None,
             tool_call_id=None,
             is_temporary=False,
+            memory_user_id=None,
+            exclude_from_memory=False,
     ):
         self.uniq_id = uniq_id if uniq_id is not None else str(uuid.uuid4())
         self.role = role
@@ -20,6 +22,8 @@ class Message:
         self.tool_calls = tool_calls
         self.tool_call_id = tool_call_id
         self.is_temporary = is_temporary  # 标记临时消息（如工具调用提醒）
+        self.memory_user_id = memory_user_id  # 标记消息所属的说话人（用于记忆保存时按人隔离）
+        self.exclude_from_memory = exclude_from_memory  # 标记不应保存到记忆的消息（如告别提示语、系统限制提示）
 
 
 class Dialogue:
@@ -172,6 +176,17 @@ class Dialogue:
                     enhanced_system_prompt,
                     flags=re.DOTALL,
                 )
+
+                # 添加约束：记忆仅属当前说话人，避免跨人归因
+                if "<memory>" in enhanced_system_prompt:
+                    memory_constraint = (
+                        "\n\n<memory_rule>"
+                        "\n<memory> 标签中的内容只属于当前正在和你对话的说话人。"
+                        "\n对话窗口中可能包含其他说话人的历史消息，但不得将其偏好、习惯、个人信息归因给当前说话人。"
+                        "\n</memory_rule>"
+                    )
+                    enhanced_system_prompt += memory_constraint
+
             dialogue.append({"role": "system", "content": enhanced_system_prompt})
 
         # 添加用户和助手的对话

@@ -42,6 +42,11 @@ public interface SysParamsService extends BaseService<SysParamsEntity> {
     <T> T getValueObject(String paramCode, Class<T> clazz);
 
     /**
+     * 获取声纹识别相似度阈值
+     */
+    double getVoiceprintSimilarityThreshold();
+
+    /**
      * 根据参数编码，更新value
      *
      * @param paramCode  参数编码

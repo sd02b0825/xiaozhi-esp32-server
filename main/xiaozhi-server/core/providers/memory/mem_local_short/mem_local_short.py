@@ -132,7 +132,7 @@ class MemoryProvider(MemoryProviderBase):
         with open(self.memory_path, "w", encoding="utf-8") as f:
             yaml.dump(all_memory, f, allow_unicode=True)
 
-    async def save_memory(self, msgs, session_id=None):
+    async def save_memory(self, msgs, session_id=None, user_id=None):
         # 打印使用的模型信息
         model_info = getattr(self.llm, "model_name", str(self.llm.__class__.__name__))
         logger.bind(tag=TAG).debug(f"使用记忆保存模型: {model_info}")
@@ -149,6 +149,10 @@ class MemoryProvider(MemoryProviderBase):
 
         msgStr = ""
         for msg in msgs:
+            # 跳过标记为排除记忆的消息（如告别提示语、系统限制提示等非用户意图内容）
+            if getattr(msg, 'exclude_from_memory', False):
+                continue
+
             content = msg.content
 
             # Extract content from JSON format if present (for ASR with emotion/language tags)
@@ -197,5 +201,5 @@ class MemoryProvider(MemoryProviderBase):
 
         return self.short_memory
 
-    async def query_memory(self, query: str) -> str:
+    async def query_memory(self, query: str, user_id=None) -> str:
         return self.short_memory

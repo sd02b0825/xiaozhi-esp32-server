@@ -40,11 +40,13 @@ async def resume_vad_detection(conn: "ConnectionHandler"):
     conn.just_woken_up = False
 
 
-async def startToChat(conn: "ConnectionHandler", text):
+async def startToChat(conn: "ConnectionHandler", text, exclude_from_memory=False):
     # 检查输入是否是JSON格式（包含说话人信息）
     speaker_name = None
     language_tag = None
     actual_text = text
+    # 标记当前消息是否应排除在记忆保存之外（如告别提示语、系统注入的指令）
+    conn._pending_exclude_from_memory = exclude_from_memory
 
     try:
         # 尝试解析JSON格式的输入
@@ -119,7 +121,7 @@ async def no_voice_close_connect(conn: "ConnectionHandler", have_voice):
             prompt = end_prompt.get("prompt")
             if not prompt:
                 prompt = "请你以```时间过得真快```未来头，用富有感情、依依不舍的话来结束这场对话吧。！"
-            await startToChat(conn, prompt)
+            await startToChat(conn, prompt, exclude_from_memory=True)
 
 
 async def max_out_size(conn: "ConnectionHandler"):

@@ -124,6 +124,14 @@ public interface DeviceService extends BaseService<DeviceEntity> {
     List<DeviceEntity> searchDevicesByMacAddress(String macAddress, Long userId);
 
     /**
+     * 根据MAC地址获取设备验证码
+     *
+     * @param macAddress MAC地址
+     * @return 设备验证码
+     */
+    String getVerifyCodeByMacAddress(String macAddress);
+
+    /**
      * 获取设备工具列表
      */
     Object getDeviceTools(String deviceId);

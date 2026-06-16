@@ -1,5 +1,7 @@
 package xiaozhi.modules.device.dto;
 
+import java.util.ArrayList;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.Getter;
@@ -28,6 +30,12 @@ public class DeviceReportRespDTO {
     
     @Schema(description = "环境声音检测配置")
     private AudioMonitor audioMonitor;
+    
+    @Schema(description = "唤醒词")
+    private ArrayList wakeups;
+    
+    @Schema(description = "验证码")
+    private String verify_code;
 
     @Schema(description = "灵芯配置")
     private LingXin lingXin;
@@ -114,4 +122,5 @@ public class DeviceReportRespDTO {
         private String json;
 
     }
+
 }

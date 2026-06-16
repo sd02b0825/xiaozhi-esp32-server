@@ -8,6 +8,8 @@ knife4j:
   setting:
     enableFooter: false
 spring:
+  main:
+    allow-circular-references: true
   datasource:
     druid:
       #MySQL

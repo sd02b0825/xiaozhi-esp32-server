@@ -14,12 +14,12 @@ class MemoryProviderBase(ABC):
         self.llm = llm
 
     @abstractmethod
-    async def save_memory(self, msgs, session_id=None):
+    async def save_memory(self, msgs, session_id=None, user_id=None):
         """Save a new memory for specific role and return memory ID"""
         print("this is base func", msgs)
 
     @abstractmethod
-    async def query_memory(self, query: str) -> str:
+    async def query_memory(self, query: str, user_id: str = None) -> str:
         """Query memories for specific role based on similarity"""
         return "please implement query method"
 

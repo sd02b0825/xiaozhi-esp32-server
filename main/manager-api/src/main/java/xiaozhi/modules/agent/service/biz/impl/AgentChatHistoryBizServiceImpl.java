@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.redis.RedisKeys;
 import xiaozhi.common.redis.RedisUtils;
+import xiaozhi.modules.agent.Enums.AgentChatHistoryType;
 import xiaozhi.modules.agent.dto.AgentChatHistoryReportDTO;
 import xiaozhi.modules.agent.entity.AgentChatHistoryEntity;
 import xiaozhi.modules.agent.entity.AgentEntity;
@@ -111,6 +112,7 @@ public class AgentChatHistoryBizServiceImpl implements AgentChatHistoryBizServic
      */
     private void saveChatText(AgentChatHistoryReportDTO report, String agentId, String macAddress, String audioId,
             Long reportTime,String speaker) {
+        String recordSpeaker = AgentChatHistoryType.USER.getValue() == report.getChatType() ? speaker : null;
         // 构建聊天记录实体
         AgentChatHistoryEntity entity = AgentChatHistoryEntity.builder()
                 .macAddress(macAddress)
@@ -120,7 +122,7 @@ public class AgentChatHistoryBizServiceImpl implements AgentChatHistoryBizServic
                 .content(report.getContent())
                 .audioId(audioId)
                 .createdAt(new Date(reportTime))
-                .speaker(speaker)
+                .speaker(recordSpeaker)
                 // NOTE(haotian): 2025/5/26 updateAt可以不设置，重点是createAt，而且这样可以看到上报延迟
                 .build();
 

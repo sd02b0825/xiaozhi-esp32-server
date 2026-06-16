@@ -27,6 +27,7 @@ from core.utils.modules_initialize import (
 from core.handle.reportHandle import report
 from core.providers.tts.default import DefaultTTS
 from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 from core.utils.dialogue import Message, Dialogue
 from core.providers.asr.dto.dto import InterfaceType
 from core.handle.textHandle import handleTextMessage
@@ -126,6 +127,9 @@ class ConnectionHandler:
         self.client_is_speaking = False
         self.client_listen_mode = "auto"
 
+        # 异常声音告警确认等待状态
+        self.pending_alarm_confirm = None
+
         # 线程任务相关
         self.loop = None  # 在 handle_connection 中获取运行中的事件循环
         self.stop_event = threading.Event()
@@ -148,6 +152,10 @@ class ConnectionHandler:
         self.memory = _memory
         self.intent = _intent
 
+        # 记忆查询跳过标记：仅对 PowerMem 模式生效
+        # 当意图识别或关键词预判判定不需要记忆时设为 True，避免不必要的 PowerMem API 调用
+        self.skip_memory = False
+
         # 为每个连接单独管理声纹识别
         self.voiceprint_provider = None
 
@@ -165,10 +173,26 @@ class ConnectionHandler:
         # 所以涉及到ASR的变量，需要在这里定义，属于connection的私有变量
         self.asr_audio = []
         self.asr_audio_queue = queue.Queue()
-        self.current_speaker = None  # 存储当前说话人
+        # current_speaker 仅作兼容字段，写入必须经过 set_voice_identity。
+        self.current_speaker = None
+        self.voice_identity = {
+            "current_speaker": None,
+            "speaker_profile_id": None,   # 说话人稳定 ID（短期=voiceprint_id）
+            "voiceprint_id": None,        # 声纹样本 ID
+            "memory_user_id": None,       # PowerMem user_id：{device_id}:{姓名}，同设备同名共享记忆
+            "source": None,
+            "confidence": 0.0,
+            "fail_count": 0,
+            "waiting_name_confirm": False,
+            "manual_confirmed": False,
+            "expire_at": 0,
+            "updated_at": 0,
+        }
 
         # llm相关变量
         self.dialogue = Dialogue()
+        # 按 memory_user_id 追踪上次保存的对话索引，避免重复保存
+        self._last_saved_dialogue_index_by_user = {}
 
         # 工具调用统计（用于监控和自动恢复）
         self.tool_call_stats = {
@@ -295,11 +319,35 @@ class ConnectionHandler:
                         # 创建新事件循环（避免与主循环冲突）
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        loop.run_until_complete(
-                            self.memory.save_memory(
-                                self.dialogue.dialogue, self.session_id
+
+                        dialogue = self.dialogue.dialogue
+                        # 遍历所有有增量数据的 memory_user_id，逐个保存
+                        for muid, last_idx in list(self._last_saved_dialogue_index_by_user.items()):
+                            if len(dialogue) > last_idx + 1:
+                                new_msgs = dialogue[last_idx + 1:]
+                                if len(new_msgs) >= 2:
+                                    loop.run_until_complete(
+                                        self.memory.save_memory(
+                                            new_msgs, self.session_id, user_id=muid
+                                        )
+                                    )
+
+                        # 如果当前身份有 memory_user_id 但不在追踪字典中，也保存
+                        current_muid = self.voice_identity.get("memory_user_id")
+                        if current_muid and current_muid not in self._last_saved_dialogue_index_by_user:
+                            if len(dialogue) >= 2:
+                                loop.run_until_complete(
+                                    self.memory.save_memory(
+                                        dialogue, self.session_id, user_id=current_muid
+                                    )
+                                )
+                        elif current_muid is None and len(dialogue) >= 2:
+                            # 无身份时使用 device_id 降级保存
+                            loop.run_until_complete(
+                                self.memory.save_memory(
+                                    dialogue, self.session_id
+                                )
                             )
-                        )
                     except Exception as e:
                         self.logger.bind(tag=TAG).error(f"保存记忆失败: {e}")
                     finally:
@@ -838,14 +886,77 @@ class ConnectionHandler:
         # 更新系统prompt至上下文
         self.dialogue.update_system_message(self.prompt)
 
+    def _build_memory_user_id(self, speaker_name: str) -> str:
+        """根据说话人姓名派生 memory_user_id，格式：{device_id}:{姓名}。
+
+        同一设备上同名说话人共享记忆空间，即使拥有多个声纹样本也能精准归并。
+        """
+        if not speaker_name or not str(speaker_name).strip():
+            return None
+        return f"{self.device_id}:{speaker_name.strip()}"
+
+    def set_voice_identity(self, speaker, source, confidence=0.0, ttl_seconds=300,
+                           speaker_profile_id=None, voiceprint_id=None):
+        """唯一的说话人身份写入口。"""
+        now = time.time()
+        self.voice_identity["current_speaker"] = speaker
+        self.voice_identity["source"] = source
+        self.voice_identity["confidence"] = confidence
+        self.voice_identity["fail_count"] = 0
+        self.voice_identity["waiting_name_confirm"] = False
+        self.voice_identity["manual_confirmed"] = source == "MANUAL_CONFIRM"
+        self.voice_identity["expire_at"] = now + ttl_seconds if speaker else 0
+        self.voice_identity["updated_at"] = now
+
+        # 新增身份字段
+        if speaker_profile_id:
+            self.voice_identity["speaker_profile_id"] = speaker_profile_id
+        if voiceprint_id:
+            self.voice_identity["voiceprint_id"] = voiceprint_id
+        # 派生 memory_user_id：按设备+姓名隔离，同人多声纹共享同一记忆空间
+        if speaker and (speaker_profile_id or voiceprint_id or source in ("VOICEPRINT", "MANUAL_CONFIRM")):
+            self.voice_identity["memory_user_id"] = self._build_memory_user_id(speaker)
+        else:
+            self.voice_identity["memory_user_id"] = None
+
+        self.current_speaker = speaker
+
+    def clear_voice_identity(self):
+        """清空当前说话人身份。"""
+        self.voice_identity["current_speaker"] = None
+        self.voice_identity["speaker_profile_id"] = None
+        self.voice_identity["voiceprint_id"] = None
+        self.voice_identity["memory_user_id"] = None
+        self.voice_identity["source"] = None
+        self.voice_identity["confidence"] = 0.0
+        self.voice_identity["fail_count"] = 0
+        self.voice_identity["waiting_name_confirm"] = False
+        self.voice_identity["manual_confirmed"] = False
+        self.voice_identity["expire_at"] = 0
+        self.voice_identity["updated_at"] = time.time()
+        self.current_speaker = None
+
+    def is_voice_identity_expired(self):
+        expire_at = self.voice_identity.get("expire_at", 0)
+        return bool(expire_at and time.time() > expire_at)
+
     def chat(self, query, depth=0):
         if query is not None:
             self.logger.bind(tag=TAG).info(f"大模型收到用户消息: {query}")
 
+        # 递归调用（工具结果处理轮）时，不需要再次查询 PowerMem 记忆
+        # 只有 PowerMem 模式的查询开销大需要跳过，其他模式照常执行
+        if depth > 0:
+            self.skip_memory = True
+
         # 为最顶层时新建会话ID和发送FIRST请求
         if depth == 0:
             self.sentence_id = str(uuid.uuid4().hex)
-            self.dialogue.put(Message(role="user", content=query))
+            # 读取并清除待处理的排除记忆标记（由 startToChat 设置）
+            pending_exclude_from_memory = getattr(self, '_pending_exclude_from_memory', False)
+            if pending_exclude_from_memory:
+                self._pending_exclude_from_memory = False
+            self.dialogue.put(Message(role="user", content=query, memory_user_id=self.voice_identity.get("memory_user_id"), exclude_from_memory=pending_exclude_from_memory))
             self.tts.tts_text_queue.put(
                 TTSMessageDTO(
                     sentence_id=self.sentence_id,
@@ -864,10 +975,12 @@ class ConnectionHandler:
             )
             force_final_answer = True
             # 添加系统指令，要求 LLM 基于现有信息回答
+            # exclude_from_memory=True: 系统提示不应被保存到记忆中
             self.dialogue.put(
                 Message(
                     role="user",
                     content="[系统提示] 已达到最大工具调用次数限制，请你基于目前已经获取的所有信息，直接给出最终答案。不要再尝试调用任何工具。",
+                    exclude_from_memory=True,
                 )
             )
 
@@ -945,12 +1058,39 @@ class ConnectionHandler:
         try:
             # 使用带记忆的对话
             memory_str = None
-            # 仅当query非空（代表用户询问）时查询记忆
-            if self.memory is not None and query:
-                future = asyncio.run_coroutine_threadsafe(
-                    self.memory.query_memory(query), self.loop
+            # 判断当前是否为 PowerMem 模式（只有 PowerMem 查询开销大，需要按需跳过）
+            is_powermem = hasattr(self.memory, 'use_powermem') and getattr(self.memory, 'use_powermem', False)
+            # 仅 PowerMem 模式 + skip_memory=True 时跳过查询；其他模式照常查询（开销极低）
+            should_query_memory = self.memory is not None and query and not (is_powermem and self.skip_memory)
+
+            if should_query_memory:
+                # 按 memory_user_id 隔离查询；无身份时不查 PowerMem
+                memory_user_id = self.voice_identity.get("memory_user_id")
+                self.logger.bind(tag=TAG).info(
+                    f"[记忆查询] query={query[:50]}..., memory_user_id={memory_user_id}, "
+                    f"voice_identity={self.voice_identity}"
                 )
-                memory_str = future.result()
+                if memory_user_id:
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.memory.query_memory(query, user_id=memory_user_id), self.loop
+                    )
+                    try:
+                        memory_str = future.result(timeout=2.0)
+                    except concurrent.futures.TimeoutError:
+                        self.logger.bind(tag=TAG).warning(
+                            f"[记忆查询] 查询超时(2s)，跳过记忆, user_id={memory_user_id}"
+                        )
+                        memory_str = ""
+                    self.logger.bind(tag=TAG).info(
+                        f"[记忆查询] 结果长度={len(memory_str) if memory_str else 0}, "
+                        f"内容={memory_str if memory_str else 'None'}"
+                    )
+                else:
+                    self.logger.bind(tag=TAG).warning("[记忆查询] memory_user_id 为空，跳过 PowerMem 查询（声纹未识别或身份过期）")
+            elif is_powermem and self.skip_memory:
+                self.logger.bind(tag=TAG).debug(
+                    f"[记忆查询] PowerMem模式：意图判断不需要记忆，跳过查询, query={query[:50] if query else 'None'}"
+                )
 
             if self.intent_type == "function_call" and functions is not None:
                 # 使用支持functions的streaming接口
