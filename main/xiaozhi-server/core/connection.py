@@ -127,6 +127,9 @@ class ConnectionHandler:
         self.client_is_speaking = False
         self.client_listen_mode = "auto"
 
+        # 异常声音告警确认等待状态
+        self.pending_alarm_confirm = None
+
         # 线程任务相关
         self.loop = None  # 在 handle_connection 中获取运行中的事件循环
         self.stop_event = threading.Event()
