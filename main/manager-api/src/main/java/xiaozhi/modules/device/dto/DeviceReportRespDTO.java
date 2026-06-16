@@ -29,6 +29,9 @@ public class DeviceReportRespDTO {
     @Schema(description = "环境声音检测配置")
     private AudioMonitor audioMonitor;
 
+    @Schema(description = "灵芯配置")
+    private LingXin lingXing;
+
     @Getter
     @Setter
     public static class Firmware {
