@@ -103,4 +103,12 @@ public class DeviceReportRespDTO {
         private String url;
 
     }
+
+    @Getter
+    @Setter
+    public static class LingXin {
+        @Schema(description = "灵芯配置")
+        private String json;
+
+    }
 }

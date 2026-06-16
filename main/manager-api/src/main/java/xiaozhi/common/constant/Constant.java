@@ -337,4 +337,7 @@ public interface Constant {
     }
     /*环境声音检测地址 */
     String AUDIO_MONITOR_URL="audio_monitor_url";
+
+    /*灵芯配置 */
+    String LINGXIN_JSON="lingxin_json";
 }

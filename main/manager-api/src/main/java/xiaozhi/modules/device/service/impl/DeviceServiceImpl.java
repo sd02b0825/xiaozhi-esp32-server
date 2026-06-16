@@ -294,6 +294,14 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         audioMonitor.setUrl(url);
         response.setAudioMonitor(audioMonitor);
 
+        DeviceReportRespDTO.LingXin lingxin = new DeviceReportRespDTO.LingXin();
+        String json=sysParamsService.getValue(Constant.LINGXIN_JSON, true);
+        if (StringUtils.isBlank(url) || url.equals("null")) {
+            json = "";
+        }
+        lingxin.setJson(json);
+        response.setLingXin(lingxin);
+
         return response;
     }
 
