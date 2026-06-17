@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 from core.handle.receiveAudioHandle import startToChat
 from core.handle.reportHandle import enqueue_asr_report
 from core.handle.sendAudioHandle import send_stt_message, send_tts_message
+from core.handle.alarmConfirmHandler import handle_alarm_inquiry_detect
 from core.handle.textMessageHandler import TextMessageHandler
 from core.handle.textMessageType import TextMessageType
 from core.utils.util import remove_punctuation_and_length
@@ -50,6 +51,11 @@ class ListenTextMessageHandler(TextMessageHandler):
             if "text" in msg_json:
                 conn.last_activity_time = time.time() * 1000
                 original_text = msg_json["text"]  # 保留原始文本
+
+                # 异常声音告警确认询问（不走 LLM）
+                if await handle_alarm_inquiry_detect(conn, original_text):
+                    return
+
                 filtered_len, filtered_text = remove_punctuation_and_length(
                     original_text
                 )
