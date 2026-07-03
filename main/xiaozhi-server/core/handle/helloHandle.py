@@ -56,6 +56,9 @@ async def handleHelloMessage(conn: "ConnectionHandler", msg_json):
             conn.mcp_client = MCPClient()
             # 发送初始化
             asyncio.create_task(send_mcp_initialize_message(conn))
+        if features.get("lingxin_sdk"):
+            conn.logger.bind(tag=TAG).info(f"客户端启用灵芯SDK")
+            conn.lingxin_sdk=features.get("lingxin_sdk")    
 
     await conn.websocket.send(json.dumps(conn.welcome_msg))
 

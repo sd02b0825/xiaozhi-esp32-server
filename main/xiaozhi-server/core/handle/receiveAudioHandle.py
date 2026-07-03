@@ -29,7 +29,7 @@ async def handleAudioMessage(conn: "ConnectionHandler", audio):
         if conn.client_is_speaking and conn.client_listen_mode != "manual":
             await handleAbortMessage(conn)
     # 设备长时间空闲检测，用于say goodbye
-    await no_voice_close_connect(conn, have_voice)
+    # await no_voice_close_connect(conn, have_voice)
     # 接收音频
     await conn.asr.receive_audio(conn, audio, have_voice)
 

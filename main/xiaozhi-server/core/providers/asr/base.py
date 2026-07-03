@@ -21,7 +21,7 @@ from core.utils.util import remove_punctuation_and_length
 from core.handle.receiveAudioHandle import handleAudioMessage
 from core.providers.tts.dto.dto import ContentType, TTSMessageDTO, SentenceType
 from typing import Optional, Tuple, List, NamedTuple, TYPE_CHECKING
-
+from core.handle.sendAudioHandle import send_tts_message
 
 if TYPE_CHECKING:
     from core.connection import ConnectionHandler
@@ -79,7 +79,20 @@ class ASRProviderBase(ABC):
                 conn.reset_audio_states()
 
                 if len(asr_audio_task) > 15:
+                    # 发送有说话声结束消息
+                    await conn.websocket.send(json.dumps({
+                        "session_id": conn.session_id,
+                        "type": "voiceprint",
+                        "action": "end"
+                    }))
                     await self.handle_voice_stop(conn, asr_audio_task)
+                else:
+                    # 发送失败消息，重置声纹标记
+                    await conn.websocket.send(json.dumps({
+                        "session_id": conn.session_id,
+                        "type": "voiceprint",
+                        "action": "fail"
+                    }))
 
     # 处理语音停止
     async def handle_voice_stop(self, conn: "ConnectionHandler", asr_audio_task: List[bytes]):
@@ -174,11 +187,32 @@ class ASRProviderBase(ABC):
             text_len, _ = remove_punctuation_and_length(content_for_length_check)
             self.stop_ws_connection()
 
+            
+
             if text_len > 0:
+                # 灵芯声纹模式，不调用大模型
+                if conn.lingxin_sdk:
+                    try:
+                        # 发送声纹识别开始消息
+                        await conn.websocket.send(json.dumps({
+                            "session_id": conn.session_id,
+                            "type": "voiceprint",
+                            "action": "success",
+                            "speaker": speaker_name or ""
+                        }))
+                        await send_tts_message(conn, "start")
+                        conn.client_is_speaking = True
+                        logger.bind(tag=TAG).info(f"灵芯声纹识别结束: speaker={speaker_name or ''}")
+                        
+                    except Exception as e:
+                        logger.bind(tag=TAG).error(f"发送声纹识别结束消息失败: {e}")
+                    finally:
+                        return
+
+                # 处理确认
                 from core.handle.alarmConfirmHandler import (
                     try_handle_alarm_confirm_response,
                 )
-
                 if await try_handle_alarm_confirm_response(conn, enhanced_text):
                     audio_snapshot = asr_audio_task.copy()
                     enqueue_asr_report(conn, enhanced_text, audio_snapshot)
@@ -188,6 +222,14 @@ class ASRProviderBase(ABC):
                 await startToChat(conn, enhanced_text)
                 audio_snapshot = asr_audio_task.copy()
                 enqueue_asr_report(conn, enhanced_text, audio_snapshot)
+            else:
+                # 发送声纹识别失败
+                await conn.websocket.send(json.dumps({
+                    "session_id": conn.session_id,
+                    "type": "voiceprint",
+                    "action": "fail",
+                }))
+
         except Exception as e:
             logger.bind(tag=TAG).error(f"处理语音停止失败: {e}")
             import traceback
@@ -355,10 +397,23 @@ class ASRProviderBase(ABC):
 
     async def _speak_fixed_text(self, conn: "ConnectionHandler", text: str):
         """直接播报固定提示，避免只发送 start 状态导致客户端卡住。"""
-        from core.handle.sendAudioHandle import send_tts_message
+
+        
+        if conn.lingxin_sdk:
+            # 发送声纹识别结束消息
+            await conn.websocket.send(json.dumps({
+            "session_id": conn.session_id,
+            "type": "voiceprint",
+            "action": "end",
+            "speaker": "",
+            "message": text
+            }))
+            return
+
 
         conn.sentence_id = str(uuid.uuid4().hex)
         conn.tts_MessageText = text
+
         await send_tts_message(conn, "start")
         conn.client_is_speaking = True
         conn.tts.tts_text_queue.put(

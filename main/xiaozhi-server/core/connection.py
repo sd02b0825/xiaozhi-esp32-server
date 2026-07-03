@@ -229,6 +229,9 @@ class ConnectionHandler:
 
         # 初始化提示词管理器
         self.prompt_manager = PromptManager(self.config, self.logger)
+        
+        # 标记设备是否开启灵芯sdk模式
+        self.lingxin_sdk=False
 
     async def handle_connection(self, ws: websockets.ServerConnection):
         try:
@@ -271,7 +274,7 @@ class ConnectionHandler:
             self.last_activity_time = time.time() * 1000
 
             # 启动超时检查任务
-            self.timeout_task = asyncio.create_task(self._check_timeout())
+            # self.timeout_task = asyncio.create_task(self._check_timeout())
 
             self.welcome_msg = self.config["xiaozhi"]
             self.welcome_msg["session_id"] = self.session_id
