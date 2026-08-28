@@ -93,6 +93,10 @@ async def startToChat(conn: "ConnectionHandler", text, exclude_from_memory=False
         return
 
     # 意图未被处理，继续常规聊天流程，使用实际文本内容
+    # 告警抢占结束后复位持久标志，允许本轮（用户回答）正常走 LLM 对话
+    if getattr(conn, "abort_llm_playback", False):
+        conn.abort_llm_playback = False
+        conn.logger.bind(tag=TAG).info("告警抢占结束，恢复 LLM 对话播报")
     await send_stt_message(conn, actual_text)
     conn.executor.submit(conn.chat, actual_text)
 

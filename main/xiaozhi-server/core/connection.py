@@ -126,6 +126,11 @@ class ConnectionHandler:
         self.client_abort = False
         self.client_is_speaking = False
         self.client_listen_mode = "auto"
+        self.client_state="idle"
+
+        # 告警抢占标志：True = 告警流程已接管，LLM 对话回复不再写入 TTS
+        # 区别于 client_abort（会被 chat 重置），此标志是持久的，不会被 chat 清除
+        self.abort_llm_playback = False
 
         # 异常声音告警确认等待状态
         self.pending_alarm_confirm = None
@@ -1120,6 +1125,12 @@ class ConnectionHandler:
         # 支持多个并行工具调用 - 使用列表存储
         tool_calls_list = []  # 格式: [{"id": "", "name": "", "arguments": ""}]
         content_arguments = ""
+
+        # 告警已接管时，直接丢弃整个 LLM 响应，不再播报
+        if getattr(self, "abort_llm_playback", False):
+            self.logger.bind(tag=TAG).info("告警已接管，丢弃 LLM 对话响应")
+            return
+
         self.client_abort = False
         emotion_flag = True
         try:
@@ -1152,6 +1163,10 @@ class ConnectionHandler:
                     )
                     emotion_flag = False
 
+                # 告警已接管时，LLM 文本不再写入 TTS 队列
+                if getattr(self, "abort_llm_playback", False):
+                    self.logger.bind(tag=TAG).info("告警已接管，跳过 LLM 文本播报")
+                    return
                 if content is not None and len(content) > 0:
                     if not tool_call_flag:
                         response_message.append(content)
@@ -1165,22 +1180,24 @@ class ConnectionHandler:
                         )
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"LLM stream processing error: {e}")
-            self.tts.tts_text_queue.put(
-                TTSMessageDTO(
-                    sentence_id=self.sentence_id,
-                    sentence_type=SentenceType.MIDDLE,
-                    content_type=ContentType.TEXT,
-                    content_detail=get_system_error_response(self.config),
-                )
-            )
-            if depth == 0:
+            # 告警已接管时，不再写入错误播报
+            if not getattr(self, "abort_llm_playback", False):
                 self.tts.tts_text_queue.put(
                     TTSMessageDTO(
                         sentence_id=self.sentence_id,
-                        sentence_type=SentenceType.LAST,
-                        content_type=ContentType.ACTION,
+                        sentence_type=SentenceType.MIDDLE,
+                        content_type=ContentType.TEXT,
+                        content_detail=get_system_error_response(self.config),
                     )
                 )
+                if depth == 0:
+                    self.tts.tts_text_queue.put(
+                        TTSMessageDTO(
+                            sentence_id=self.sentence_id,
+                            sentence_type=SentenceType.LAST,
+                            content_type=ContentType.ACTION,
+                        )
+                    )
             return
         # 处理function call
         if tool_call_flag:
@@ -1271,13 +1288,15 @@ class ConnectionHandler:
                 self.tool_call_stats['consecutive_no_call'] += 1
 
         if depth == 0:
-            self.tts.tts_text_queue.put(
-                TTSMessageDTO(
-                    sentence_id=self.sentence_id,
-                    sentence_type=SentenceType.LAST,
-                    content_type=ContentType.ACTION,
+            # 告警已接管时，不再发送结尾标记
+            if not getattr(self, "abort_llm_playback", False):
+                self.tts.tts_text_queue.put(
+                    TTSMessageDTO(
+                        sentence_id=self.sentence_id,
+                        sentence_type=SentenceType.LAST,
+                        content_type=ContentType.ACTION,
+                    )
                 )
-            )
             # 使用lambda延迟计算，只有在DEBUG级别时才执行get_llm_dialogue()
             self.logger.bind(tag=TAG).debug(
                 lambda: json.dumps(
@@ -1319,6 +1338,10 @@ class ConnectionHandler:
         return result
 
     def _handle_function_result(self, tool_results, depth,streamed_text):
+        # 告警已接管时，跳过工具结果处理，避免再次播报
+        if getattr(self, "abort_llm_playback", False):
+            self.logger.bind(tag=TAG).info("告警已接管，跳过工具结果处理")
+            return
         need_llm_tools = []
 
         for result, tool_call_data in tool_results:

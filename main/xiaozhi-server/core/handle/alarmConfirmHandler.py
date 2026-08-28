@@ -4,6 +4,7 @@
 import json
 import re
 import time
+import asyncio
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 import aiohttp
@@ -12,6 +13,9 @@ if TYPE_CHECKING:
     from core.connection import ConnectionHandler
 
 from core.utils.util import remove_punctuation_and_length
+from core.utils.dialogue import Message
+from core.handle.reportHandle import enqueue_asr_report
+from core.handle.abortHandle import handleAbortMessage
 
 TAG = __name__
 
@@ -116,6 +120,7 @@ async def speak_fixed_text(conn: "ConnectionHandler", text: str) -> None:
 
 async def handle_alarm_inquiry_detect(conn: "ConnectionHandler", raw_text: str) -> bool:
     """处理 listen/detect 中的告警询问命令。"""
+   
     parsed = parse_alarm_confirm_text(raw_text)
     if not parsed:
         return False
@@ -123,6 +128,8 @@ async def handle_alarm_inquiry_detect(conn: "ConnectionHandler", raw_text: str) 
     inquiry_text = parsed["inquiry_text"]
     if not inquiry_text:
         return False
+    
+     
 
     conn.pending_alarm_confirm = {
         "session_id": parsed["session_id"],
@@ -136,7 +143,30 @@ async def handle_alarm_inquiry_detect(conn: "ConnectionHandler", raw_text: str) 
     conn.logger.bind(tag=TAG).info(
         f"进入告警确认等待: session={parsed['session_id']}"
     )
+
+    # 等待 ASR 初始化完成
+    for _ in range(50):  # 最多等 5 秒
+        if conn.asr is not None:
+            break
+        await asyncio.sleep(0.1)
+
+    if conn.asr is None:
+        conn.logger.bind(tag=TAG).error("等待 ASR 初始化超时，跳过告警播报")
+        conn.pending_alarm_confirm = None
+        return True
+
+    # ===== 告警抢占：中止 LLM 对话播报，避免与询问语冲突 =====
+    # 1. 先置持久标志，让 chat 线程在 LLM 响应返回后自查退出，不再写入 TTS
+    conn.abort_llm_playback = True
+    # 2. 再打断并清空队列：置 client_abort、清 TTS/音频/报告队列、通知设备端停止播放
+    await handleAbortMessage(conn)
+    # 3. 重申持久标志（handleAbortMessage 只动 client_abort，不会清掉本标志，此处重申以防竞态）
+    conn.abort_llm_playback = True
+    conn.logger.bind(tag=TAG).info("告警抢占：已中止 LLM 对话播报，开始播报询问语")
+
     await speak_fixed_text(conn, inquiry_text)
+    conn.dialogue.put(Message(role="assistant", content=inquiry_text))
+    enqueue_asr_report(conn, inquiry_text, [])
     return True
 
 

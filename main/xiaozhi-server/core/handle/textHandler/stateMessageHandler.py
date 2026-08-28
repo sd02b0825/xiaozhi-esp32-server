@@ -21,6 +21,7 @@ class StateTextMessageHandler(TextMessageHandler):
         
         # 获取state状态
         state = msg_json.get("state")
+        conn.client_state = state
         conn.logger.bind(tag=TAG).info(f"state状态: {state}")
         
         # if state == "speaking":

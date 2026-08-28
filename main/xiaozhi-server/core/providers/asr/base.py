@@ -79,20 +79,24 @@ class ASRProviderBase(ABC):
                 conn.reset_audio_states()
 
                 if len(asr_audio_task) > 15:
-                    # 发送有说话声结束消息
-                    await conn.websocket.send(json.dumps({
-                        "session_id": conn.session_id,
-                        "type": "voiceprint",
-                        "action": "end"
-                    }))
+                    if conn.lingxin_sdk:
+                        # 发送有说话声结束消息
+                        await conn.websocket.send(json.dumps({
+                            "session_id": conn.session_id,
+                            "type": "voiceprint",
+                            "action": "end"
+                        }))
+                    
                     await self.handle_voice_stop(conn, asr_audio_task)
                 else:
-                    # 发送失败消息，重置声纹标记
-                    await conn.websocket.send(json.dumps({
-                        "session_id": conn.session_id,
-                        "type": "voiceprint",
-                        "action": "fail"
-                    }))
+                    if conn.lingxin_sdk:
+                        # 发送失败消息，重置声纹标记
+                        await conn.websocket.send(json.dumps({
+                            "session_id": conn.session_id,
+                            "type": "voiceprint",
+                            "action": "fail"
+                        }))
+                    
 
     # 处理语音停止
     async def handle_voice_stop(self, conn: "ConnectionHandler", asr_audio_task: List[bytes]):
@@ -209,26 +213,27 @@ class ASRProviderBase(ABC):
                     finally:
                         return
 
-                # 处理确认
-                from core.handle.alarmConfirmHandler import (
-                    try_handle_alarm_confirm_response,
-                )
-                if await try_handle_alarm_confirm_response(conn, enhanced_text):
-                    audio_snapshot = asr_audio_task.copy()
-                    enqueue_asr_report(conn, enhanced_text, audio_snapshot)
-                    return
+                # # 处理确认
+                # from core.handle.alarmConfirmHandler import (
+                #     try_handle_alarm_confirm_response,
+                # )
+                # if await try_handle_alarm_confirm_response(conn, enhanced_text):
+                #     audio_snapshot = asr_audio_task.copy()
+                #     enqueue_asr_report(conn, enhanced_text, audio_snapshot)
+                #     return
 
                 # 使用自定义模块进行上报
                 await startToChat(conn, enhanced_text)
                 audio_snapshot = asr_audio_task.copy()
                 enqueue_asr_report(conn, enhanced_text, audio_snapshot)
             else:
-                # 发送声纹识别失败
-                await conn.websocket.send(json.dumps({
-                    "session_id": conn.session_id,
-                    "type": "voiceprint",
-                    "action": "fail",
-                }))
+                if conn.lingxin_sdk:
+                    # 发送声纹识别失败
+                    await conn.websocket.send(json.dumps({
+                        "session_id": conn.session_id,
+                        "type": "voiceprint",
+                        "action": "fail",
+                    }))
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"处理语音停止失败: {e}")
