@@ -71,17 +71,18 @@ class ServerMCPClient:
         )
 
     async def cleanup(self):
-        """清理MCP客户端资源"""
-        if not self._worker_task:
+        """清理MCP客户端资源（幂等：并发调用时只等待一次）"""
+        # 先取出任务并置 None，避免多个协程并发进入时重复等待 worker 退出（最长各 20 秒）
+        task = self._worker_task
+        if task is None:
             return
+        self._worker_task = None
 
         self._shutdown_evt.set()
         try:
-            await asyncio.wait_for(self._worker_task, timeout=20)
+            await asyncio.wait_for(task, timeout=20)
         except (asyncio.TimeoutError, Exception) as e:
             self.logger.bind(tag=TAG).error(f"服务端MCP客户端关闭错误: {e}")
-        finally:
-            self._worker_task = None
 
     def has_tool(self, name: str) -> bool:
         """检查是否包含指定工具

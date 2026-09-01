@@ -118,7 +118,26 @@ class UnifiedToolHandler:
 
     def get_functions(self) -> List[Dict[str, Any]]:
         """获取所有工具的函数描述"""
-        return self.tool_manager.get_function_descriptions()
+        descriptions = self.tool_manager.get_function_descriptions()
+
+        # 告警确认期间缩减工具列表，只保留必要函数，降低模型选择噪声，
+        # 确保模型在告警确认流程中优先调用 handle_alarm_confirm
+        pending = getattr(self.conn, "pending_alarm_confirm", None)
+        if pending and pending.get("waiting_confirm"):
+            keep_names = {"handle_alarm_confirm", "handle_exit_intent"}
+            descriptions = [
+                d
+                for d in descriptions
+                if isinstance(d, dict)
+                and isinstance(d.get("function"), dict)
+                and d["function"].get("name") in keep_names
+            ]
+            self.logger.debug(
+                "告警确认期间缩减工具列表: %s",
+                [d["function"].get("name") for d in descriptions],
+            )
+
+        return descriptions
 
     def current_support_functions(self) -> List[str]:
         """获取当前支持的函数名称列表"""

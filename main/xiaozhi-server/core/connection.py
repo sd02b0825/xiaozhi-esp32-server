@@ -218,6 +218,8 @@ class ConnectionHandler:
 
         # 是否在聊天结束后关闭连接
         self.close_after_chat = False
+        # 连接是否已关闭：close() 的幂等标志，防止主动关闭与 finally 兜底关闭并发执行两次清理
+        self._closed = False
         self.load_function_plugin = False
         self.intent_type = "nointent"
 
@@ -659,8 +661,9 @@ class ConnectionHandler:
         try:
             # 异步获取差异化配置
             await self._initialize_private_config_async()
-            # 在线程池中初始化组件
-            self.executor.submit(self._initialize_components)
+            # 在线程池中初始化组件（close() 可能已 shutdown 线程池，需判空）
+            if self.executor is not None:
+                self.executor.submit(self._initialize_components)
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"后台初始化失败: {e}")
 
@@ -1063,6 +1066,31 @@ class ConnectionHandler:
         if tool_call_reminder:
             self.dialogue.put(Message(role="user", content=tool_call_reminder, is_temporary=True))
 
+        # 告警确认期间注入强上下文指令，强制 LLM 调用 handle_alarm_confirm，
+        # 避免模型把"不要/不用"等回答当成普通闲聊直接回复
+        alarm_instruction = None
+        pending_alarm = getattr(self, "pending_alarm_confirm", None)
+        if (
+            depth == 0
+            and query is not None
+            and pending_alarm
+            and pending_alarm.get("waiting_confirm")
+            and time.time() <= pending_alarm.get("expire_at", 0)
+        ):
+            alarm_instruction = (
+                "[系统指令] 当前处于告警确认流程：系统刚询问过『是否需要帮用户通知家人』。"
+                f"用户刚刚的回答是：『{query}』。"
+                "你必须立即调用 handle_alarm_confirm 函数处理该回答，禁止直接回复任何聊天文本。"
+                "用户同意通知则 confirmed=true；用户明确表示不要/不用则 confirmed=false；"
+                "用户答非所问、没听清或没有正面回应则 confirmed=null。"
+            )
+            self.dialogue.put(
+                Message(role="user", content=alarm_instruction, is_temporary=True)
+            )
+            self.logger.bind(tag=TAG).debug(
+                f"已注入告警确认强制指令，等待 LLM 调用 handle_alarm_confirm"
+            )
+
         try:
             # 使用带记忆的对话
             memory_str = None
@@ -1304,15 +1332,15 @@ class ConnectionHandler:
                 )
             )
 
-            # 清理临时插入的工具调用提醒消息（使用标记清理）
-            if tool_call_reminder and len(self.dialogue.dialogue) > 0:
+            # 清理临时插入的工具调用提醒 / 告警确认指令消息（使用标记清理）
+            if (tool_call_reminder or alarm_instruction) and len(self.dialogue.dialogue) > 0:
                 original_length = len(self.dialogue.dialogue)
                 self.dialogue.dialogue = [
                     msg for msg in self.dialogue.dialogue
                     if not getattr(msg, 'is_temporary', False)
                 ]
                 if len(self.dialogue.dialogue) < original_length:
-                    self.logger.bind(tag=TAG).debug("已清理临时的工具调用提醒消息")
+                    self.logger.bind(tag=TAG).debug("已清理临时的工具调用提醒 / 告警确认指令消息")
 
         return True
 
@@ -1440,6 +1468,13 @@ class ConnectionHandler:
 
     async def close(self, ws=None):
         """资源清理方法"""
+        # 幂等保护：close() 可能被主动关闭（sendAudioHandle 的 close_after_chat）
+        # 和 handle_connection 的 finally 兜底并发调用，检查+置位之间无 await，
+        # 在单线程事件循环中是原子的，保证只执行一次清理。
+        if getattr(self, "_closed", False):
+            self.logger.bind(tag=TAG).debug("连接已关闭，跳过重复清理")
+            return
+        self._closed = True
         try:
             # 清理 VAD 连接资源
             if (
