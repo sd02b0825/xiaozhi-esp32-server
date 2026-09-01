@@ -134,14 +134,33 @@ def handle_alarm_confirm(conn: "ConnectionHandler", confirmed: Optional[bool] = 
             )
 
         elif confirmed is None and pending_active:
-            # 用户答非所问：友好提示当前仅能处理告警确认，保持等待用户重新回答
+            # 用户答非所问：保持等待，交由大模型结合上下文生成友好追问
             pending["expire_at"] = time.time() + CONFIRM_STATE_TTL
-            reply = random.choice(DEFAULT_REASK_REPLIES)
-            logger.bind(tag=TAG).info("用户答非所问，提示当前仅能处理告警确认")
+
+            # 防循环：连续多次答非所问时降级为固定文案，避免 REQLLM 反复触发
+            reask_count = pending.get("reask_count", 0) + 1
+            pending["reask_count"] = reask_count
+            if reask_count > 2:
+                reply = random.choice(DEFAULT_REASK_REPLIES)
+                logger.bind(tag=TAG).info("用户连续答非所问，降级为固定文案")
+                return ActionResponse(
+                    action=Action.RESPONSE,
+                    result="用户答非所问，已提示当前仅能处理告警确认",
+                    response=reply,
+                )
+
+            logger.bind(tag=TAG).info("用户答非所问，交由大模型生成追问文案")
             return ActionResponse(
-                action=Action.RESPONSE,
-                result="用户答非所问，已提示当前仅能处理告警确认",
-                response=reply,
+                action=Action.REQLLM,
+                result=(
+                    "【系统状态】设备处于异常告警状态，系统正在等待用户确认是否通知家人。"
+                    "用户刚才的回答没有正面回应。"
+                    "请用一句话，以亲切、自然、简洁的口吻，向用户说明：当前只能帮用户处理『是否通知家人』这一件事，"
+                    "其他任务暂时无法处理，并追问用户是否需要通知家人。"
+                    "你可以稍微呼应一下用户刚才说的话，但不要跑题，不要聊其他话题。"
+                    "请直接输出最终回复文本，禁止再次调用任何工具。"
+                ),
+                response=None,
             )
 
         elif confirmed is False and pending_active:
